@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { PlayMode, Character, LootItem, Projectile, GameParticle, StormZone, PlayerStats, Weapon, ArenaType, EnvironmentalTile, AICustomTheme, AIEnvironmentEvent, SupplyDrop, PoisonZone, WeaponType } from './types';
+import { PlayMode, Character, LootItem, Projectile, GameParticle, StormZone, PlayerStats, Weapon, ArenaType, EnvironmentalTile, AICustomTheme, AIEnvironmentEvent, SupplyDrop, PoisonZone, WeaponType, Difficulty } from './types';
 import { MAP_SIZE, BOT_NAMES, getDistance, generateRandomLoot, generateMapStructures, generateWeapon, Building, generateProceduralArena, ARENA_THEMES } from './utils';
 import { sounds } from './audio';
 import MainMenu from './components/MainMenu';
@@ -33,6 +33,7 @@ export default function App() {
   // Navigation State
   const [gameState, setGameState] = useState<'menu' | 'playing' | 'report'>('menu');
   const [playMode, setSelectedMode] = useState<PlayMode>('solo');
+  const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>('normal');
   const [selectedArena, setSelectedArena] = useState<ArenaType | 'random'>('random');
   const [currentArena, setCurrentArena] = useState<ArenaType>('military_forest');
   const [controlOption, setControlOption] = useState<'keyboard' | 'gamepad' | 'touch'>(() => {
@@ -173,6 +174,7 @@ export default function App() {
       rightJoystick: { x: 80, y: 80 },
       dashButton: { x: 82, y: 55 },
       mobileHUD: { x: 50, y: 82 },
+      reloadButton: { x: 70, y: 82 },
     };
   });
 
@@ -223,6 +225,31 @@ export default function App() {
     }
   }, []);
 
+  // Déclencher la recharge manuelle
+  const triggerPlayerReload = () => {
+    const p = playerRef.current;
+    if (p && p.alive && !p.knocked) {
+      const activeW = p.weapons[p.activeWeaponIndex];
+      if (!activeW) return;
+      
+      // Ne recharger que si le chargeur n'est pas déjà plein et qu'on a des munitions
+      if (activeW.currentClip < activeW.clipSize && p.ammo[activeW.type] > 0) {
+        const now = Date.now();
+        // Vérifier si on n'est pas déjà en train de tirer/recharger
+        if (now - p.lastShootTime < activeW.fireRate) return;
+
+        const reloadAmt = Math.min(activeW.clipSize - activeW.currentClip, p.ammo[activeW.type]);
+        if (reloadAmt > 0) {
+          activeW.currentClip += reloadAmt;
+          p.ammo[activeW.type] -= reloadAmt;
+          p.lastShootTime = now + 1200; // Temps de rechargement simulé
+          sounds.playHeal(); // Son de recharge léger
+          spawnParticlesCircle(p.x, p.y, '#38bdf8', 10); // Particules de recharge bleues
+        }
+      }
+    }
+  };
+
   // Sync keyboard triggers in App DOM
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -230,22 +257,29 @@ export default function App() {
       keysPressedRef.current[key] = true;
       keysPressedRef.current[e.code.toLowerCase()] = true;
 
-      // Touches raccourcis de soins : 'f' ou '1'/'2' pour soins rapides
+      // Touches raccourcis de soins : 'a'/'q' pour medkit, 'f' pour bouclier
       if (gameState === 'playing' && playerRef.current && playerRef.current.alive && !playerRef.current.knocked) {
         if (key === 'a' || key === 'q') {
           // Utiliser kit soin
           consumeItem('medkit');
-        } else if (key === 'e' || key === 'r') {
+        } else if (key === 'f') {
           // Utiliser potion bouclier
           consumeItem('shield');
+        } else if (key === 'r') {
+          // Recharger
+          triggerPlayerReload();
         } else if (key === '3' || key === 'digit3' || key === 'space' || key === 'shift') {
           triggerPlayerDash();
-        } else if (key === 'e' ) {
+        } else if (key === '1' || key === 'digit1') {
           // Slot 1
           switchPlayerWeapon(0);
-        } else if (key === 'r') {
+        } else if (key === '2' || key === 'digit2') {
           // Slot 2
           switchPlayerWeapon(1);
+        } else if (key === 'e') {
+          // Action / Switch interact (optionnel, ici switch slot)
+          const nextSlot = playerRef.current.activeWeaponIndex === 0 ? 1 : 0;
+          switchPlayerWeapon(nextSlot);
         } else if (key === 't') {
           // Exprimer émote équipée
           handleTriggerEmote();
@@ -425,6 +459,24 @@ export default function App() {
 
     // Créer ton arme de base
     const pWeapon0 = generateWeapon('pistol', 'common');
+    // Paramètres basés sur la difficulté
+    let playerMaxHealth = 100;
+    let playerMaxShield = 50;
+    let botSpeedBase = 4.0;
+    let botShieldChance = 0.5;
+
+    if (selectedDifficulty === 'easy') {
+      playerMaxHealth = 150;
+      playerMaxShield = 75;
+      botSpeedBase = 3.6;
+      botShieldChance = 0.2;
+    } else if (selectedDifficulty === 'hard') {
+      playerMaxHealth = 75;
+      playerMaxShield = 0;
+      botSpeedBase = 4.4;
+      botShieldChance = 0.7;
+    }
+
     const playerObj: Character = {
       id: pId,
       name: playerName || 'Survivant',
@@ -438,8 +490,8 @@ export default function App() {
       teamId: playerTeamId,
       alive: true,
       knocked: false,
-      health: 100,
-      shield: 50,
+      health: playerMaxHealth,
+      shield: playerMaxShield,
       weapons: [pWeapon0, null],
       activeWeaponIndex: 0,
       ammo: {
@@ -548,7 +600,7 @@ export default function App() {
         x: bx,
         y: by,
         radius: 17,
-        speed: 4.0 + Math.random() * 0.8,
+        speed: botSpeedBase + Math.random() * 0.8,
         angle: Math.random() * Math.PI * 2,
         isBot: true,
         isPlayer: false,
@@ -556,7 +608,7 @@ export default function App() {
         alive: true,
         knocked: false,
         health: 100,
-        shield: Math.random() > 0.5 ? 25 : 0,
+        shield: Math.random() > botShieldChance ? 25 : 0,
         weapons: [botW, null],
         activeWeaponIndex: 0,
         ammo: { pistol: 120, shotgun: 25, rifle: 110, sniper: 15, rocket: 4 },
@@ -4088,6 +4140,8 @@ export default function App() {
             setPlayerName={setPlayerName}
             selectedMode={playMode}
             setSelectedMode={setSelectedMode}
+            selectedDifficulty={selectedDifficulty}
+            setSelectedDifficulty={setSelectedDifficulty}
             skinColor={skinColor}
             setSkinColor={setSkinColor}
             hatStyle={hatStyle}
@@ -4135,6 +4189,7 @@ export default function App() {
               equippedEmote={stats.equippedEmote}
               onTriggerEmote={handleTriggerEmote}
               touchLayout={touchLayout}
+              onReload={triggerPlayerReload}
             />
           )}
 
@@ -4246,6 +4301,28 @@ export default function App() {
                 title="Dash instantané"
               >
                 ⚡
+              </button>
+
+              {/* BOUTON RELOAD (🔄) */}
+              <button
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  if (e.cancelable) e.preventDefault();
+                  triggerPlayerReload();
+                }}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  triggerPlayerReload();
+                }}
+                className="absolute w-16 h-16 bg-slate-800/80 rounded-full flex items-center justify-center text-2xl shadow-xl border border-slate-600 font-black text-slate-100 active:scale-95 pointer-events-auto hover:brightness-110 cursor-pointer select-none transition-all"
+                style={{
+                  left: `${touchLayout.reloadButton.x}%`,
+                  top: `${touchLayout.reloadButton.y}%`,
+                  transform: 'translate(-50%, -50%)',
+                }}
+                title="Recharger l'arme"
+              >
+                🔄
               </button>
 
             </div>

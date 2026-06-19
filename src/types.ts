@@ -1,5 +1,7 @@
 export type PlayMode = 'solo' | 'duo' | 'squad';
 
+export type Difficulty = 'easy' | 'normal' | 'hard';
+
 export type ArenaType = 'military_forest' | 'industrial' | 'lava_ruins' | 'cyber_neon' | 'skeletal_desert' | 'ai_custom';
 
 export interface AIEnvironmentEvent {

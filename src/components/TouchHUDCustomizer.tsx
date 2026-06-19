@@ -10,6 +10,7 @@ export interface TouchHUDLayout {
   rightJoystick: ElementPosition;
   dashButton: ElementPosition;
   mobileHUD: ElementPosition;
+  reloadButton: ElementPosition;
 }
 
 interface TouchHUDCustomizerProps {
@@ -23,6 +24,7 @@ const DEFAULT_LAYOUT: TouchHUDLayout = {
   rightJoystick: { x: 80, y: 80 },
   dashButton: { x: 82, y: 55 },
   mobileHUD: { x: 50, y: 82 },
+  reloadButton: { x: 70, y: 82 },
 };
 
 export default function TouchHUDCustomizer({
@@ -259,6 +261,28 @@ export default function TouchHUDCustomizer({
             </span>
           </div>
 
+          {/* 3b. BOUTON RELOAD (🔄) */}
+          <div
+            onMouseDown={(e) => handleStartDrag(e, 'reloadButton')}
+            onTouchStart={(e) => handleStartDrag(e, 'reloadButton')}
+            className={`absolute w-10 h-10 md:w-14 md:h-14 bg-slate-800/90 rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing select-none transition-all border-2 shadow-lg z-10 ${
+              draggedElement === 'reloadButton'
+                ? 'border-blue-400 shadow-[0_0_15px_rgba(56,189,248,0.6)] scale-110'
+                : 'border-slate-700/80 hover:border-slate-600'
+            }`}
+            style={{
+              left: `${layout.reloadButton.x}%`,
+              top: `${layout.reloadButton.y}%`,
+              transform: 'translate(-50%, -50%)',
+            }}
+          >
+            <span className="text-xs md:text-lg">🔄</span>
+            {/* Label */}
+            <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 font-mono text-[8px] md:text-[9px] text-blue-400 bg-slate-950/90 py-0.5 px-1 rounded uppercase font-black tracking-wider whitespace-nowrap">
+              Reload
+            </span>
+          </div>
+
           {/* 4. MOBILE HUD PANEL */}
           <div
             onMouseDown={(e) => handleStartDrag(e, 'mobileHUD')}
@@ -300,10 +324,11 @@ export default function TouchHUDCustomizer({
       <div className="bg-slate-950/50 border border-slate-800 p-4 rounded-xl text-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="space-y-1">
           <p className="font-bold text-slate-300">📈 Coordonnées de disposition (X% / Y%) :</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[10px] font-mono text-slate-400 mt-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-[10px] font-mono text-slate-400 mt-2">
             <div>• Mouvement : <span className="text-amber-500 font-bold">{layout.leftJoystick.x}% / {layout.leftJoystick.y}%</span></div>
             <div>• Viser & Tirer : <span className="text-red-400 font-bold">{layout.rightJoystick.x}% / {layout.rightJoystick.y}%</span></div>
             <div>• Bouton Dash : <span className="text-amber-400 font-bold">{layout.dashButton.x}% / {layout.dashButton.y}%</span></div>
+            <div>• Bouton Reload : <span className="text-blue-400 font-bold">{layout.reloadButton.x}% / {layout.reloadButton.y}%</span></div>
             <div>• Barre HUD : <span className="text-purple-400 font-bold">{layout.mobileHUD.x}% / {layout.mobileHUD.y}%</span></div>
           </div>
         </div>

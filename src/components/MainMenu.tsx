@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PlayMode, PlayerStats, ArenaType } from '../types';
+import { PlayMode, PlayerStats, ArenaType, Difficulty } from '../types';
 import SkinCustomizer from './SkinCustomizer';
 import TouchHUDCustomizer, { TouchHUDLayout } from './TouchHUDCustomizer';
 import { LEVEL_REWARDS, getXpRequired } from '../progression';
@@ -11,6 +11,8 @@ interface MainMenuProps {
   setPlayerName: (name: string) => void;
   selectedMode: PlayMode;
   setSelectedMode: (mode: PlayMode) => void;
+  selectedDifficulty: Difficulty;
+  setSelectedDifficulty: (difficulty: Difficulty) => void;
   skinColor: string;
   setSkinColor: (color: string) => void;
   hatStyle: any;
@@ -29,6 +31,12 @@ const MODES_CONFIG: { value: PlayMode; label: string; desc: string; icon: string
   { value: 'solo', label: 'Solo (Chacun pour soi)', desc: '40 joueurs en arène brutale. Que le meilleur survive !', icon: '👤' },
   { value: 'duo', label: 'Duo Tactique', desc: 'Faites équipe avec un coéquipier Bot contrôlé par l\'IA pour dominer !', icon: '👥' },
   { value: 'squad', label: 'Section / Squad', desc: 'Prenez d\'assaut l\'arène avec une escouade de 4 survivants !', icon: '🛡️' },
+];
+
+const DIFFICULTY_CONFIG: { value: Difficulty; label: string; desc: string; icon: string; color: string }[] = [
+  { value: 'easy', label: 'Facile', desc: 'Idéal pour débuter. Plus de vie, ennemis moins rapides.', icon: '🌱', color: 'text-emerald-400' },
+  { value: 'normal', label: 'Normal', desc: 'L\'expérience de jeu équilibrée standard.', icon: '⚔️', color: 'text-amber-400' },
+  { value: 'hard', label: 'Difficile', desc: 'Moins de vie, ennemis redoutables et rapides. Un vrai défi !', icon: '💀', color: 'text-red-500' },
 ];
 
 const ARENA_CONFIGS_DESC: Record<ArenaType, { name: string; emoji: string; desc: string }> = {
@@ -70,6 +78,8 @@ export default function MainMenu({
   setPlayerName,
   selectedMode,
   setSelectedMode,
+  selectedDifficulty,
+  setSelectedDifficulty,
   skinColor,
   setSkinColor,
   hatStyle,
@@ -725,6 +735,33 @@ export default function MainMenu({
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Choix de la Difficulté */}
+            <div className="flex flex-col gap-3">
+              <h2 className="text-xs font-mono text-slate-400 uppercase tracking-widest font-bold">Difficulté des Bots</h2>
+              <div className="grid grid-cols-3 gap-2">
+                {DIFFICULTY_CONFIG.map((difficulty) => (
+                  <button
+                    key={difficulty.value}
+                    onClick={() => setSelectedDifficulty(difficulty.value)}
+                    className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 text-center transition-all relative cursor-pointer ${
+                      selectedDifficulty === difficulty.value
+                        ? 'border-amber-500 bg-slate-900 ring-4 ring-amber-500/10'
+                        : 'border-slate-800 hover:border-slate-700 bg-slate-900/40'
+                    }`}
+                    title={difficulty.desc}
+                  >
+                    <span className="text-xl mb-1">{difficulty.icon}</span>
+                    <span className={`text-[10px] uppercase font-black tracking-wider ${selectedDifficulty === difficulty.value ? difficulty.color : 'text-slate-500'}`}>
+                      {difficulty.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-500 italic px-1">
+                {DIFFICULTY_CONFIG.find(d => d.value === selectedDifficulty)?.desc}
+              </p>
             </div>
 
             {/* Bouton de Grand Lancement */}

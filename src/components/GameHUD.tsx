@@ -20,6 +20,7 @@ interface GameHUDProps {
   equippedEmote?: string;
   onTriggerEmote?: () => void;
   touchLayout?: TouchHUDLayout;
+  onReload?: () => void;
 }
 
 const RARITY_COLORS = {
@@ -47,6 +48,7 @@ export default function GameHUD({
   equippedEmote,
   onTriggerEmote,
   touchLayout,
+  onReload,
 }: GameHUDProps) {
 
   // Assistant local emote helper
@@ -396,8 +398,17 @@ export default function GameHUD({
             {player.weapons[0] ? (
               <div className="flex flex-col items-center mt-2.5">
                 <span className="text-xs font-black truncate max-w-[130px] leading-tight text-white">{player.weapons[0].name}</span>
-                <span className="text-[10px] font-mono font-bold text-slate-300">
+                <span className="text-[10px] font-mono font-bold text-slate-300 flex items-center gap-1.5">
                   {player.weapons[0].currentClip}/{player.weapons[0].clipSize}
+                  {player.activeWeaponIndex === 0 && player.weapons[0].currentClip < player.weapons[0].clipSize && player.ammo[player.weapons[0].type] > 0 && (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onReload?.(); }}
+                      className="bg-slate-800 hover:bg-slate-700 p-0.5 rounded border border-slate-700 animate-pulse active:scale-90"
+                      title="Recharger (R)"
+                    >
+                      🔄
+                    </button>
+                  )}
                 </span>
               </div>
             ) : (
@@ -420,8 +431,17 @@ export default function GameHUD({
             {player.weapons[1] ? (
               <div className="flex flex-col items-center mt-2.5">
                 <span className="text-xs font-black truncate max-w-[130px] leading-tight text-white">{player.weapons[1].name}</span>
-                <span className="text-[10px] font-mono font-bold text-slate-300">
+                <span className="text-[10px] font-mono font-bold text-slate-300 flex items-center gap-1.5">
                   {player.weapons[1].currentClip}/{player.weapons[1].clipSize}
+                  {player.activeWeaponIndex === 1 && player.weapons[1].currentClip < player.weapons[1].clipSize && player.ammo[player.weapons[1].type] > 0 && (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onReload?.(); }}
+                      className="bg-slate-800 hover:bg-slate-700 p-0.5 rounded border border-slate-700 animate-pulse active:scale-90"
+                      title="Recharger (R)"
+                    >
+                      🔄
+                    </button>
+                  )}
                 </span>
               </div>
             ) : (
