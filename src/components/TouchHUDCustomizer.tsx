@@ -152,7 +152,7 @@ export default function TouchHUDCustomizer({
           ref={containerRef}
           className="relative w-full aspect-[21/9] sm:aspect-[16/7] md:aspect-[16/7] bg-slate-900/45 overflow-hidden grid-pattern-bg touch-none"
           style={{
-            backgroundImage: `radial-gradient(ellipse at center, rgba(15, 23, 42, 0.4) 0%, rgba(2, 6, 23, 0.95) 100%)`,
+            backgroundImage: 'radial-gradient(ellipse at center, rgba(15, 23, 42, 0.4) 0%, rgba(2, 6, 23, 0.95) 100%)',
           }}
         >
           {/* Grille technique de repères optiques */}

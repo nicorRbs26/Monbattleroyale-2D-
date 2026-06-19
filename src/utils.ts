@@ -27,166 +27,166 @@ export interface WeaponDef {
 
 export const CUSTOM_WEAPONS: WeaponDef[] = [
   {
-    nom: "Pistolet de Base",
-    type: "pistol",
+    nom: 'Pistolet de Base',
+    type: 'pistol',
     damage: 15,
     fireRate: 222, // 1000 / 4.5
     clipSize: 12,
-    rarity: "common",
+    rarity: 'common',
     spread: 0.05,
     bulletSpeed: 11,
     range: 400
   },
   {
-    nom: "Pistolet Automatique",
-    type: "pistol",
+    nom: 'Pistolet Automatique',
+    type: 'pistol',
     damage: 12,
     fireRate: 111, // 1000 / 9.0
     clipSize: 20,
-    rarity: "rare",
+    rarity: 'rare',
     spread: 0.07,
     bulletSpeed: 11,
     range: 380
   },
   {
-    nom: "Mitraillette Légère",
-    type: "rifle",
+    nom: 'Mitraillette Légère',
+    type: 'rifle',
     damage: 14,
     fireRate: 83, // 1000 / 12.0
     clipSize: 30,
-    rarity: "rare",
+    rarity: 'rare',
     spread: 0.10,
     bulletSpeed: 13,
     range: 450
   },
   {
-    nom: "SMG Compact",
-    type: "rifle",
+    nom: 'SMG Compact',
+    type: 'rifle',
     damage: 16,
     fireRate: 91, // 1000 / 11.0
     clipSize: 35,
-    rarity: "rare",
+    rarity: 'rare',
     spread: 0.09,
     bulletSpeed: 13,
     range: 480
   },
   {
-    nom: "Fusil d'Assaut Standard",
-    type: "rifle",
+    nom: 'Fusil d\'Assaut Standard',
+    type: 'rifle',
     damage: 24,
     fireRate: 154, // 1000 / 6.5
     clipSize: 30,
-    rarity: "rare",
+    rarity: 'rare',
     spread: 0.08,
     bulletSpeed: 14,
     range: 550
   },
   {
-    nom: "Fusil d'Assaut Tactique",
-    type: "rifle",
+    nom: 'Fusil d\'Assaut Tactique',
+    type: 'rifle',
     damage: 28,
     fireRate: 143, // 1000 / 7.0
     clipSize: 30,
-    rarity: "epic",
+    rarity: 'epic',
     spread: 0.06,
     bulletSpeed: 15,
     range: 580
   },
   {
-    nom: "Fusil à Pompe de Chasse",
-    type: "shotgun",
+    nom: 'Fusil à Pompe de Chasse',
+    type: 'shotgun',
     damage: 85,
     fireRate: 1250, // 1000 / 0.8
     clipSize: 5,
-    rarity: "common",
+    rarity: 'common',
     spread: 0.22,
     bulletSpeed: 9,
     range: 220
   },
   {
-    nom: "Fusil à Pompe Automatique",
-    type: "shotgun",
+    nom: 'Fusil à Pompe Automatique',
+    type: 'shotgun',
     damage: 65,
     fireRate: 500, // 1000 / 2.0
     clipSize: 8,
-    rarity: "rare",
+    rarity: 'rare',
     spread: 0.25,
     bulletSpeed: 9.5,
     range: 240
   },
   {
-    nom: "Fusil de Sniper à Verrou",
-    type: "sniper",
+    nom: 'Fusil de Sniper à Verrou',
+    type: 'sniper',
     damage: 110,
     fireRate: 2000, // 1000 / 0.5
     clipSize: 1,
-    rarity: "epic",
+    rarity: 'epic',
     spread: 0.002,
     bulletSpeed: 24,
     range: 1000
   },
   {
-    nom: "Sniper Semi-Automatique",
-    type: "sniper",
+    nom: 'Sniper Semi-Automatique',
+    type: 'sniper',
     damage: 55,
     fireRate: 455, // 1000 / 2.2
     clipSize: 10,
-    rarity: "rare",
+    rarity: 'rare',
     spread: 0.01,
     bulletSpeed: 21,
     range: 850
   },
   {
-    nom: "Mitrailleuse Lourde",
-    type: "rifle",
+    nom: 'Mitrailleuse Lourde',
+    type: 'rifle',
     damage: 22,
     fireRate: 118, // 1000 / 8.5
     clipSize: 100,
-    rarity: "epic",
+    rarity: 'epic',
     spread: 0.12,
     bulletSpeed: 13.5,
     range: 520
   },
   {
-    nom: "Fusil Laser Cybernétique",
-    type: "rifle",
+    nom: 'Fusil Laser Cybernétique',
+    type: 'rifle',
     damage: 35,
     fireRate: 200, // 1000 / 5.0
     clipSize: 25,
-    rarity: "epic",
+    rarity: 'epic',
     spread: 0.03,
     bulletSpeed: 18,
     range: 650
   },
   {
-    nom: "Lance-Grenades",
-    type: "rocket",
+    nom: 'Lance-Grenades',
+    type: 'rocket',
     damage: 75,
     fireRate: 833, // 1000 / 1.2
     clipSize: 6,
-    rarity: "epic",
+    rarity: 'epic',
     spread: 0.05,
     bulletSpeed: 7.5,
     range: 500
   },
   {
-    nom: "Canon Électromagnétique (Railgun)",
-    type: "sniper",
+    nom: 'Canon Électromagnétique (Railgun)',
+    type: 'sniper',
     damage: 150,
     fireRate: 3333, // 1000 / 0.3
     clipSize: 3,
-    rarity: "legendary",
+    rarity: 'legendary',
     spread: 0.001,
     bulletSpeed: 28,
     range: 1100
   },
   {
-    nom: "Le Désintégrateur",
-    type: "rocket",
+    nom: 'Le Désintégrateur',
+    type: 'rocket',
     damage: 220,
     fireRate: 2500, // 1000 / 0.4
     clipSize: 5,
-    rarity: "legendary",
+    rarity: 'legendary',
     spread: 0.04,
     bulletSpeed: 8,
     range: 600
@@ -248,6 +248,22 @@ export const WEAPON_TYPES_CONFIG: Record<WeaponType, { name: string; fireRate: n
 
 export function getDistance(x1: number, y1: number, x2: number, y2: number): number {
   return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+}
+
+/**
+ * # test: Vérifie si deux cercles se chevauchent
+ */
+export function checkCircleCollision(x1: number, y1: number, r1: number, x2: number, y2: number, r2: number): boolean {
+  return getDistance(x1, y1, x2, y2) < r1 + r2;
+}
+
+/**
+ * # test: Vérifie si un point est à l'intérieur d'un rectangle AABB
+ */
+export function checkPointInRect(px: number, py: number, rx: number, ry: number, rw: number, rh: number): boolean {
+  const halfW = rw / 2;
+  const halfH = rh / 2;
+  return px > rx - halfW && px < rx + halfW && py > ry - halfH && py < ry + halfH;
 }
 
 export function generateWeapon(type: WeaponType, rarity: Weapon['rarity'] = 'common'): Weapon {

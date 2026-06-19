@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { PlayMode, Character, LootItem, Projectile, GameParticle, StormZone, PlayerStats, Weapon, ArenaType, EnvironmentalTile, AICustomTheme, AIEnvironmentEvent, SupplyDrop, PoisonZone, WeaponType, Difficulty } from './types';
-import { MAP_SIZE, BOT_NAMES, getDistance, generateRandomLoot, generateMapStructures, generateWeapon, Building, generateProceduralArena, ARENA_THEMES } from './utils';
+import { PlayMode, Character, LootItem, Projectile, GameParticle, StormZone, PlayerStats, ArenaType, EnvironmentalTile, AICustomTheme, AIEnvironmentEvent, SupplyDrop, PoisonZone, WeaponType, Difficulty } from './types';
+import { MAP_SIZE, BOT_NAMES, getDistance, generateRandomLoot, generateWeapon, Building, generateProceduralArena, ARENA_THEMES, checkCircleCollision, checkPointInRect } from './utils';
 import { sounds } from './audio';
 import MainMenu from './components/MainMenu';
 import GameHUD from './components/GameHUD';
@@ -29,6 +29,12 @@ const DEFAULT_STATS: PlayerStats = {
   equippedEmote: 'none',
 };
 
+const GRID_CELL_SIZE = 125;
+
+/**
+ * Main application component for the Aura Royale 2D Battle Royale game.
+ * Manages game state, navigation, core entity refs, and the main canvas loop.
+ */
 export default function App() {
   // Navigation State
   const [gameState, setGameState] = useState<'menu' | 'playing' | 'report'>('menu');
@@ -44,13 +50,13 @@ export default function App() {
     return isTouch ? 'touch' : 'keyboard';
   });
 
-  // AI Customized Arenas States & Refs
+  // AI Customized Arenas States
   const [aiCustomTheme, setAiCustomTheme] = useState<AICustomTheme | null>(null);
-  const aiCustomThemeRef = useRef<AICustomTheme | null>(null);
   const [activeAIEvent, setActiveAIEvent] = useState<AIEnvironmentEvent | null>(null);
-  const activeAIEventRef = useRef<AIEnvironmentEvent | null>(null);
 
-  // Timers and indices for AI Event Loop
+  // Environment and AI Events Refs
+  const aiCustomThemeRef = useRef<AICustomTheme | null>(null);
+  const activeAIEventRef = useRef<AIEnvironmentEvent | null>(null);
   const aiEventTimerRef = useRef<number>(0);
   const aiEventNextTriggerRef = useRef<number>(8);
   const aiEventIndexRef = useRef<number>(0);
@@ -75,7 +81,7 @@ export default function App() {
     activeAIEventRef.current = activeAIEvent;
   }, [activeAIEvent]);
 
-  // Player Skin & customization
+  // Player customization states
   const [playerName, setPlayerName] = useState<string>('Survivant_Pro');
   const [skinColor, setSkinColor] = useState<string>('#ef4444');
   const [hatStyle, setHatStyle] = useState<Character['hatStyle']>('cap');
@@ -115,6 +121,8 @@ export default function App() {
 
   // Refs for HTML5 Canvas Loop (avoid React DOM overhead at 60 fps)
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const gridOffscreenRef = useRef<HTMLCanvasElement | null>(null);
+  const spatialGridRef = useRef<Building[][]>([]); // Grid for fast structure collision check
   const gameLoopRef = useRef<number | null>(null);
 
   // Core Game Entities kept in useRef to prevent infinite re-renders during 60 FPS simulations
@@ -221,7 +229,7 @@ export default function App() {
       try {
         setStats(JSON.parse(saved));
       } catch (err) {
-        console.error("Failed to load local stats", err);
+        console.error('Failed to load local stats', err);
       }
     }
   }, []);
@@ -463,6 +471,54 @@ export default function App() {
     structuresRef.current = arenaResult.buildings;
     environmentalTilesRef.current = arenaResult.tiles;
 
+    // vibe: Construction de la grille spatiale pour accélération des collisions projectiles
+    const cellSize = 125;
+    const cellCount = Math.ceil(MAP_SIZE / cellSize);
+    const newGrid: Building[][] = Array.from({ length: cellCount * cellCount }, () => []);
+    
+    structuresRef.current.forEach(s => {
+      if (s.type === 'bush') return; // Pas de collision avec les buissons
+      const startX = Math.floor((s.x - s.w / 2) / cellSize);
+      const endX = Math.floor((s.x + s.w / 2) / cellSize);
+      const startY = Math.floor((s.y - s.h / 2) / cellSize);
+      const endY = Math.floor((s.y + s.h / 2) / cellSize);
+      
+      for (let x = Math.max(0, startX); x <= Math.min(cellCount - 1, endX); x++) {
+        for (let y = Math.max(0, startY); y <= Math.min(cellCount - 1, endY); y++) {
+          newGrid[y * cellCount + x].push(s);
+        }
+      }
+    });
+    spatialGridRef.current = newGrid;
+
+    // vibe: Pré-calcul de la grille du sol sur canvas offscreen pour réduire le nombre d'appels stroke() par frame
+    if (!gridOffscreenRef.current) {
+      gridOffscreenRef.current = document.createElement('canvas');
+    }
+    const gCanvas = gridOffscreenRef.current;
+    gCanvas.width = MAP_SIZE;
+    gCanvas.height = MAP_SIZE;
+    const gCtx = gCanvas.getContext('2d');
+    if (gCtx) {
+      const themeConfig = ARENA_THEMES[activeTheme];
+      const computedGridColor = (activeTheme === 'ai_custom' && aiCustomTheme) ? aiCustomTheme.gridColor : (themeConfig?.gridColor || '#1e293b');
+      gCtx.strokeStyle = computedGridColor;
+      gCtx.lineWidth = 1;
+      const gridStep = 100;
+      for (let x = 0; x <= MAP_SIZE; x += gridStep) {
+        gCtx.beginPath();
+        gCtx.moveTo(x, 0);
+        gCtx.lineTo(x, MAP_SIZE);
+        gCtx.stroke();
+      }
+      for (let y = 0; y <= MAP_SIZE; y += gridStep) {
+        gCtx.beginPath();
+        gCtx.moveTo(0, y);
+        gCtx.lineTo(MAP_SIZE, y);
+        gCtx.stroke();
+      }
+    }
+
     // Générer loots aléatoires
     const lootList: LootItem[] = [];
     for (let i = 0; i < 160; i++) {
@@ -672,7 +728,7 @@ export default function App() {
       isShrinking: false,
     };
 
-    setSurvivorCount(40);
+    setSurvivorCount(characters.length);
     setStormPhase(1);
     setStormTimer(45);
     setStormIsShrinking(false);
@@ -980,7 +1036,7 @@ export default function App() {
                       if (char.health <= 0) {
                         char.health = 0;
                         char.alive = false;
-                        char.deathCause = "Foudroyé en plein vol";
+                        char.deathCause = 'Foudroyé en plein vol';
                         triggerCharacterDeath(char);
                       }
                     }
@@ -1103,11 +1159,11 @@ export default function App() {
       
       // Notification
       setCenterNotification({
-        text: "📦 COLIS STRATÉGIQUE EN APPROCHE ! Suivez l'indicateur sur la carte !",
+        text: '📦 COLIS STRATÉGIQUE EN APPROCHE ! Suivez l\'indicateur sur la carte !',
         type: 'supply',
         expiresAt: Date.now() + 5000,
       });
-      pushKillFeed("📦 [RAVITAILLEMENT] Un colis tactique a commencé son parachutage !");
+      pushKillFeed('📦 [RAVITAILLEMENT] Un colis tactique a commencé son parachutage !');
       sounds.playHeal();
     }
 
@@ -1138,11 +1194,11 @@ export default function App() {
       poisonZonesRef.current.push(newZone);
 
       setCenterNotification({
-        text: "☢️ ALERTE NUAGE TOXIQUE : Une zone va être contaminée ! Évacuez le secteur marqué !",
+        text: '☢️ ALERTE NUAGE TOXIQUE : Une zone va être contaminée ! Évacuez le secteur marqué !',
         type: 'danger',
         expiresAt: Date.now() + 6000,
       });
-      pushKillFeed("☣️ [ALERTE TOXIQUE] Faille acide détectée ! Contamination imminente !");
+      pushKillFeed('☣️ [ALERTE TOXIQUE] Faille acide détectée ! Contamination imminente !');
       sounds.playExplosion();
     }
 
@@ -1159,16 +1215,16 @@ export default function App() {
         setWeatherDuration(Math.round(duration));
         weatherEventTimerRef.current = duration;
 
-        let noteText = "";
+        let noteText = '';
         let noteType: 'danger' | 'warning' | 'info' = 'warning';
         if (chosen === 'acid_rain') {
-          noteText = "🌧️ ACID RAIN DETECTION : L'eau corrosive ronge lentement le blindage hors des abris !";
+          noteText = '🌧️ ACID RAIN DETECTION : L\'eau corrosive ronge lentement le blindage hors des abris !';
           noteType = 'warning';
         } else if (chosen === 'sandstorm') {
-          noteText = "🌪️ SANDSTORM WARNING : Vision de détection drastiquement réduite par d'épais vents de sable !";
+          noteText = '🌪️ SANDSTORM WARNING : Vision de détection drastiquement réduite par d\'épais vents de sable !';
           noteType = 'warning';
         } else {
-          noteText = "☄️ COMPTE À REBOURS COMÈTES DE LAVA : Évitez les zones d'impact thermiques !";
+          noteText = '☄️ COMPTE À REBOURS COMÈTES DE LAVA : Évitez les zones d\'impact thermiques !';
           noteType = 'danger';
         }
 
@@ -1186,11 +1242,11 @@ export default function App() {
         weatherEventTimerRef.current = 30 + Math.random() * 15; // 30s de beau temps
 
         setCenterNotification({
-          text: "☀️ RETOUR AU CALME : Le climat de l'arène s'est stabilisé.",
+          text: '☀️ RETOUR AU CALME : Le climat de l\'arène s\'est stabilisé.',
           type: 'info',
           expiresAt: Date.now() + 4000,
         });
-        pushKillFeed("☀️ [CLIMAT] Le ciel de l'arène s'est apaisé.");
+        pushKillFeed('☀️ [CLIMAT] Le ciel de l\'arène s\'est apaisé.');
       }
     } else {
       if (weatherEvent !== 'none') {
@@ -1215,7 +1271,7 @@ export default function App() {
 
           if (!isSheltered) {
             // Dégât lent constant hors abris
-            char.deathCause = "Corrodé par la pluie acide";
+            char.deathCause = 'Corrodé par la pluie acide';
             damageCharacter(char, 1.2 / 60, 'environment-acid-rain');
 
             // Splash acide d'illustration
@@ -1299,7 +1355,7 @@ export default function App() {
               if (dist <= comet.radius) {
                 const force = 1 - (dist / comet.radius);
                 const dmg = Math.round(18 + force * 24);
-                char.deathCause = "Désintégré par une comète magma";
+                char.deathCause = 'Désintégré par une comète magma';
                 damageCharacter(char, dmg, 'environment-comet');
               }
             }
@@ -1321,7 +1377,7 @@ export default function App() {
           
           // Flash, étincelles d'atterrissage
           spawnParticlesCircle(drop.x, drop.y, '#f59e0b', 20);
-          pushKillFeed("📦 [RAVITAILLEMENT] Le colis stratégique a atterri sur le champ de bataille !");
+          pushKillFeed('📦 [RAVITAILLEMENT] Le colis stratégique a atterri sur le champ de bataille !');
           sounds.playHeal();
         }
       } else if (drop.isLanded && !drop.isOpened) {
@@ -1408,11 +1464,11 @@ export default function App() {
           zone.maxTimer = 18;
 
           setCenterNotification({
-            text: "☣️ ATTENTION DANGER TOXIQUE ACTIF ! Le nuage de poison s'est répandu !",
+            text: '☣️ ATTENTION DANGER TOXIQUE ACTIF ! Le nuage de poison s\'est répandu !',
             type: 'danger',
             expiresAt: Date.now() + 5000,
           });
-          pushKillFeed("☣️ [DANGER TOXIQUE] Le gaz de poison vert s'est répandu ! Fuyez la zone !");
+          pushKillFeed('☣️ [DANGER TOXIQUE] Le gaz de poison vert s\'est répandu ! Fuyez la zone !');
           sounds.playExplosion();
         }
       } else {
@@ -1442,7 +1498,7 @@ export default function App() {
           const dist = getDistance(char.x, char.y, zone.x, zone.y);
           if (dist < zone.radius) {
             // 2.5 dégâts par seconde
-            char.deathCause = "Asphyxié par la tempête de poison";
+            char.deathCause = 'Asphyxié par la tempête de poison';
             damageCharacter(char, 2.5 / 60, 'environment-poison');
             
             // Effet d'étincelles acides
@@ -1454,9 +1510,9 @@ export default function App() {
 
         if (zone.timer <= 0) {
           zone.active = false;
-          pushKillFeed("🍃 [AIR PUR] Le nuage de poison s'est dissipé !");
+          pushKillFeed('🍃 [AIR PUR] Le nuage de poison s\'est dissipé !');
           setCenterNotification({
-            text: "🍃 ARÈNE PURIFIÉE : Les vapeurs toxiques ont disparu !",
+            text: '🍃 ARÈNE PURIFIÉE : Les vapeurs toxiques ont disparu !',
             type: 'info',
             expiresAt: Date.now() + 4000,
           });
@@ -1481,8 +1537,7 @@ export default function App() {
       // Calculer si sur une tuile
       for (let i = 0; i < envTiles.length; i++) {
         const tile = envTiles[i];
-        const dist = getDistance(char.x, char.y, tile.x, tile.y);
-        if (dist < tile.radius) {
+        if (checkCircleCollision(char.x, char.y, char.radius, tile.x, tile.y, tile.radius)) {
           if (tile.type === 'mud') {
             speedMultiplier *= (currentArena === 'skeletal_desert' ? 0.45 : 0.60);
             if (currentArena === 'industrial') {
@@ -1515,7 +1570,7 @@ export default function App() {
 
       // Effets de dégâts & soins
       if (onLava && char.alive) {
-        char.deathCause = "Noyé dans des coulées de magma";
+        char.deathCause = 'Noyé dans des coulées de magma';
         damageCharacter(char, 15 / 60, 'environment-lava');
         if (Math.random() < 0.25) {
           particles.push({
@@ -1534,7 +1589,7 @@ export default function App() {
       }
 
       if (onAcid && char.alive) {
-        char.deathCause = "Dissous par de l'acide toxique";
+        char.deathCause = 'Dissous par de l\'acide toxique';
         damageCharacter(char, 6 / 60, 'environment-acid');
         if (Math.random() < 0.2) {
           particles.push({
@@ -1754,7 +1809,7 @@ export default function App() {
       const distToStormCenter = getDistance(player.x, player.y, storm.x, storm.y);
       if (distToStormCenter > storm.radius) {
         // Subit dégâts de zone
-        player.deathCause = "Englouti par la tempête";
+        player.deathCause = 'Englouti par la tempête';
         damageCharacter(player, storm.damage / 60, 'environment-tempest');
       }
     }
@@ -1775,7 +1830,7 @@ export default function App() {
       // Check dégât de zone pour bots
       const dS = getDistance(char.x, char.y, storm.x, storm.y);
       if (dS > storm.radius) {
-        char.deathCause = "Perdu dans la tempête";
+        char.deathCause = 'Perdu dans la tempête';
         damageCharacter(char, storm.damage / 60, 'environment-tempest');
         if (!char.alive) return;
       }
@@ -2023,8 +2078,7 @@ export default function App() {
       if (!char.alive || char.knocked) return;
 
       lootItemsRef.current = lootItemsRef.current.filter(item => {
-        const d = getDistance(char.x, char.y, item.x, item.y);
-        if (d < char.radius + item.radius) {
+        if (checkCircleCollision(char.x, char.y, char.radius, item.x, item.y, item.radius)) {
           // Ramassage
           if (item.type === 'weapon' && item.weaponData) {
             // Est-ce qu'on a un slot d'arme dispo ?
@@ -2110,12 +2164,19 @@ export default function App() {
         return false; // Portée expirée
       }
 
-      // Check collision avec murs solides du décor
-      const hitWall = structures.some(s => {
-        if (s.type === 'bush') return false; // On traverse les buissons !
-        const halfW = s.w / 2;
-        const halfH = s.h / 2;
-        return proj.x > s.x - halfW && proj.x < s.x + halfW && proj.y > s.y - halfH && proj.y < s.y + halfH;
+      // Check collision avec murs solides du décor (Optimisé via Grille Spatiale)
+      const cellSize = GRID_CELL_SIZE;
+      const cellCount = Math.ceil(MAP_SIZE / cellSize);
+      const gx = Math.floor(proj.x / cellSize);
+      const gy = Math.floor(proj.y / cellSize);
+      const gridIdx = gy * cellCount + gx;
+      
+      const localStructures = (gx >= 0 && gx < cellCount && gy >= 0 && gy < cellCount)
+        ? spatialGridRef.current[gridIdx]
+        : [];
+
+      const hitWall = localStructures.some(s => {
+        return checkPointInRect(proj.x, proj.y, s.x, s.y, s.w, s.h);
       });
 
       if (hitWall) {
@@ -2130,8 +2191,7 @@ export default function App() {
         const char = characters[i];
         if (!char.alive || char.id === proj.ownerId || char.teamId === proj.teamId) continue; // Pas de friendly fire !
         
-        const d = getDistance(proj.x, proj.y, char.x, char.y);
-        if (d < char.radius + proj.radius) {
+        if (checkCircleCollision(proj.x, proj.y, proj.radius, char.x, char.y, char.radius)) {
           hitChar = true;
           damageCharacter(char, proj.damage, proj.ownerId);
           break;
@@ -2156,10 +2216,8 @@ export default function App() {
     });
 
     // --- COHÉRENCE DU NOMBRE DE SURVIVANTS ---
-    const totalLiving = characters.filter(c => c.alive).length;
-    if (totalLiving !== survivorCount) {
-      setSurvivorCount(totalLiving);
-    }
+    // Optimisé : On ne recalcule le compte que si nécessaire via triggerCharacterDeath
+    // ou lors d'init de partie.
 
     // --- CONDITION DE FIN DE PARTIE ---
     // Trouver combien d'équipes distinctes en vie
@@ -2286,7 +2344,7 @@ export default function App() {
           }
           char.deathCause = `Éliminé par ${attacker.name}`;
         } else {
-          char.deathCause = "Blessure fatale";
+          char.deathCause = 'Blessure fatale';
         }
         triggerCharacterDeath(char, attacker?.name);
       }
@@ -2295,8 +2353,11 @@ export default function App() {
 
   // Traiter décès
   const triggerCharacterDeath = (char: Character, attackerName?: string) => {
-    const killer = attackerName || "Tempête";
+    const killer = attackerName || 'Tempête';
     pushKillFeed(`🪦 ${char.name} a été éliminé par ${killer}`);
+    
+    // vibe: Mise à jour événementielle du compteur de survivants (évite le calcul O(N) par frame)
+    setSurvivorCount(prev => Math.max(1, prev - 1));
 
     // Laisser au sol tout son butin !
     char.weapons.forEach(w => {
@@ -2338,7 +2399,7 @@ export default function App() {
       const finalLivingRemaining = charactersRef.current.filter(c => c.alive).length + 1;
       setEndGameRank(finalLivingRemaining);
       setEndGameKills(char.kills);
-      setDeathCause(char.deathCause || "Mort dans l'arène");
+      setDeathCause(char.deathCause || 'Mort dans l\'arène');
       
       // Proposer le mode spectateur immédiat
       setSpectatorMode(true);
@@ -2734,7 +2795,7 @@ export default function App() {
             }
           }
           else if (theme.textureStyle === 'organic_cells') {
-            ctx.fillStyle = theme.textureSecondaryColor + "33"; // Transluminescence
+            ctx.fillStyle = theme.textureSecondaryColor + '33'; // Transluminescence
             ctx.beginPath();
             ctx.arc(sx + offsetX, sy + offsetY, 12 + Math.abs(seed % 15), 0, Math.PI * 2);
             ctx.fill();
@@ -2757,13 +2818,13 @@ export default function App() {
             ctx.stroke();
           }
           else if (theme.textureStyle === 'waves') {
-            ctx.strokeStyle = theme.textureSecondaryColor + "99";
+            ctx.strokeStyle = theme.textureSecondaryColor + '99';
             ctx.beginPath();
             ctx.arc(sx + offsetX, sy + offsetY, 10 + Math.abs(seed % 30), 0, Math.PI * 2);
             ctx.stroke();
           }
           else {
-            ctx.fillStyle = theme.accentColor + "44";
+            ctx.fillStyle = theme.accentColor + '44';
             ctx.beginPath();
             ctx.arc(sx + offsetX, sy + offsetY, 3 + Math.abs(seed % 6), 0, Math.PI * 2);
             ctx.fill();
@@ -2773,29 +2834,27 @@ export default function App() {
       ctx.restore();
     }
 
-    // Déssiner grille de terrain pour l'effet de vitesse et grandeur
-    ctx.strokeStyle = gridColor; // Lignes de grille
-    ctx.lineWidth = 1;
-    const gridStep = 100;
-    
-    const startGridX = Math.floor((camX - width / 2) / gridStep) * gridStep;
-    const endGridX = Math.ceil((camX + width / 2) / gridStep) * gridStep;
-    const startGridY = Math.floor((camY - height / 2) / gridStep) * gridStep;
-    const endGridY = Math.ceil((camY + height / 2) / gridStep) * gridStep;
-
-    for (let x = startGridX; x <= endGridX; x += gridStep) {
-      if (x < 0 || x > MAP_SIZE) continue;
-      ctx.beginPath();
-      ctx.moveTo(toScreenX(x), toScreenY(0));
-      ctx.lineTo(toScreenX(x), toScreenY(MAP_SIZE));
-      ctx.stroke();
-    }
-    for (let y = startGridY; y <= endGridY; y += gridStep) {
-      if (y < 0 || y > MAP_SIZE) continue;
-      ctx.beginPath();
-      ctx.moveTo(toScreenX(0), toScreenY(y));
-      ctx.lineTo(toScreenX(MAP_SIZE), toScreenY(y));
-      ctx.stroke();
+    // vibe: Rendu optimisé de la grille via canvas offscreen pré-généré
+    if (gridOffscreenRef.current) {
+      const gCanvas = gridOffscreenRef.current;
+      ctx.drawImage(gCanvas, toScreenX(0), toScreenY(0));
+    } else {
+      // Fallback si non prêt (rare)
+      ctx.strokeStyle = gridColor;
+      ctx.lineWidth = 1;
+      const gridStep = 100;
+      for (let x = 0; x <= MAP_SIZE; x += gridStep) {
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(x), toScreenY(0));
+        ctx.lineTo(toScreenX(x), toScreenY(MAP_SIZE));
+        ctx.stroke();
+      }
+      for (let y = 0; y <= MAP_SIZE; y += gridStep) {
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(0), toScreenY(y));
+        ctx.lineTo(toScreenX(MAP_SIZE), toScreenY(y));
+        ctx.stroke();
+      }
     }
 
     // --- RENDRE LES TUILES ENVIRONNEMENTALES PROCÉDURALES ---
@@ -3312,7 +3371,7 @@ export default function App() {
         ctx.fillStyle = '#22c55e';
         ctx.font = '900 12px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`☣️ NUAGE EMPOISONNÉ TOXIQUE`, zx, zy - zr + 20);
+        ctx.fillText('☣️ NUAGE EMPOISONNÉ TOXIQUE', zx, zy - zr + 20);
       }
       ctx.restore();
     });
@@ -3516,13 +3575,13 @@ export default function App() {
         
         ctx.fillStyle = p.color;
         ctx.globalAlpha = p.life * 0.8;
-        ctx.font = "bold 9px monospace";
-        ctx.textAlign = "center";
-        ctx.fillText("⚠️ ZONE DE DANGER", px, py + 3);
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('⚠️ ZONE DE DANGER', px, py + 3);
       } else if (p.type === 'digital_rune') {
         ctx.fillStyle = p.color;
-        ctx.font = "bold 10px monospace";
-        const runes = ["0", "1", "[]", "<>", "AI", "SYS", "ERR", "⚡", "X", "7", "Ø"];
+        ctx.font = 'bold 10px monospace';
+        const runes = ['0', '1', '[]', '<>', 'AI', 'SYS', 'ERR', '⚡', 'X', '7', 'Ø'];
         const glyph = runes[Math.floor((p.x + p.y) % runes.length)];
         ctx.fillText(glyph, toScreenX(p.x), toScreenY(p.y));
       } else {
@@ -4396,13 +4455,13 @@ export default function App() {
             <div className="absolute top-[4.5rem] left-1/2 -translate-x-1/2 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-full px-5 py-1.5 flex items-center gap-3 shadow-[0_10px_25px_rgba(0,0,0,0.65)] z-40 select-none pointer-events-none transition-all duration-300 animate-pulse">
               <div className={`w-2.5 h-2.5 rounded-full animate-ping absolute ${
                 weatherEvent === 'magma_comets' ? 'bg-rose-500' :
-                weatherEvent === 'acid_rain' ? 'bg-green-500' :
-                'bg-amber-500'
+                  weatherEvent === 'acid_rain' ? 'bg-green-500' :
+                    'bg-amber-500'
               }`} />
               <div className={`w-2.5 h-2.5 rounded-full relative ${
                 weatherEvent === 'magma_comets' ? 'bg-rose-500 shadow-[0_0_8px_#ef4444]' :
-                weatherEvent === 'acid_rain' ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' :
-                'bg-amber-500 shadow-[0_0_8px_#f59e0b]'
+                  weatherEvent === 'acid_rain' ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' :
+                    'bg-amber-500 shadow-[0_0_8px_#f59e0b]'
               }`} />
               <span className="text-[11px] font-black font-sans tracking-widest text-slate-200 uppercase">
                 {weatherEvent === 'magma_comets' && '☄️ AVERSE DE COMÈTES MAGMA'}

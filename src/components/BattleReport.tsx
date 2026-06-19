@@ -19,13 +19,13 @@ interface BattleReportProps {
 }
 
 const FUN_LOADING_MESSAGES = [
-  "Restauration des archives de combat par l'IA...",
-  "Analyse pragmatique des variables vectorielles...",
-  "Calcul du ratio d'Aura résiduelle...",
-  "Formulation des excuses tactiques de survie...",
-  "L'assistant Aura Prime passe en revue vos erreurs...",
-  "Génération du rapport de combat par Gemini...",
-  "Compilation des pires décisions de la partie..."
+  'Restauration des archives de combat par l\'IA...',
+  'Analyse pragmatique des variables vectorielles...',
+  'Calcul du ratio d\'Aura résiduelle...',
+  'Formulation des excuses tactiques de survie...',
+  'L\'assistant Aura Prime passe en revue vos erreurs...',
+  'Génération du rapport de combat par Gemini...',
+  'Compilation des pires décisions de la partie...'
 ];
 
 export default function BattleReport({
@@ -131,7 +131,7 @@ export default function BattleReport({
           setReportText(
             `[Rapport Émergence] Soldat ${playerName}, vous avez combattu courageusement et terminé #${rank} du mode ${mode}. ` +
             `Votre fin tragique fut provoquée par : "${deathCause}" après avoir vaillamment défait ${kills} adversaires à l'aide de votre ${weaponOfChoice || 'pistolet de secours'}. ` +
-            `Vos choix esthétiques audacieux ont détourné l'attention, mais n'ont hélas pu contrer l'inévitable. Améliorez vos compétences de tir et relancez !`
+            'Vos choix esthétiques audacieux ont détourné l\'attention, mais n\'ont hélas pu contrer l\'inévitable. Améliorez vos compétences de tir et relancez !'
           );
           setLoading(false);
         }

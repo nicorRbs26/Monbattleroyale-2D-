@@ -139,7 +139,7 @@ export default function SkinCustomizer({
               placeholder="Pseudo"
               maxLength={16}
               value={playerName}
-              onChange={(e) => setPlayerName(e.target.value.replace(/[^a-zA-Z0-9_\-\s]/g, ""))}
+              onChange={(e) => setPlayerName(e.target.value.replace(/[^a-zA-Z0-9_\-\s]/g, ''))}
               className="bg-slate-950 text-slate-100 border border-slate-700 focus:border-amber-500 outline-none px-4 py-2 rounded-lg font-sans w-full transition-all text-sm font-semibold"
             />
           </div>
@@ -184,8 +184,8 @@ export default function SkinCustomizer({
                     isLocked
                       ? 'bg-slate-950/20 border-slate-900 text-slate-600 cursor-not-allowed opacity-60'
                       : hatStyle === hat.value
-                      ? 'bg-slate-800 text-amber-400 border-amber-500'
-                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                        ? 'bg-slate-800 text-amber-400 border-amber-500'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
                   }`}
                   title={isLocked ? `Bloqué ! Débloquez au Niveau ${getLevelReq}` : hat.name}
                 >
@@ -216,8 +216,8 @@ export default function SkinCustomizer({
                     isLocked
                       ? 'bg-slate-950/20 border-slate-900 text-slate-600 cursor-not-allowed opacity-60'
                       : patternStyle === pat.value
-                      ? 'bg-slate-800 text-amber-400 border-amber-500'
-                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                        ? 'bg-slate-800 text-amber-400 border-amber-500'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
                   }`}
                   title={isLocked ? `Bloqué ! Débloquez au Niveau ${getLevelReq}` : pat.name}
                 >

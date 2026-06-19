@@ -30,6 +30,10 @@ const RARITY_COLORS = {
   legendary: 'border-amber-500 bg-amber-950/40 text-amber-300',
 };
 
+/**
+ * GameHUD component responsible for displaying the head-up display during gameplay.
+ * Shows player stats, inventory, kill feed, and map elements.
+ */
 export default function GameHUD({
   player,
   mate,

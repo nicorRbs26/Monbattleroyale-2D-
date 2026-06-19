@@ -146,7 +146,7 @@ export interface Character {
   lastShootTime: number;
   lastDecisionTime: number;
   lastHealTime?: number;
-  reviveTimer: number; // ms restant pour réanimer l'allié ciblé ou se faire réanimer
+  reviveTimer: number; // ms remaining to revive targeted ally or be revived
   revivedBy?: string;
   tempSpeedMultiplier?: number;
 }

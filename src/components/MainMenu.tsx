@@ -276,8 +276,8 @@ export default function MainMenu({
                       isEquipped
                         ? 'border-amber-500 bg-slate-900 shadow-lg shadow-amber-500/5'
                         : isUnlocked
-                        ? 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
-                        : 'border-slate-950 bg-slate-950/20 opacity-60'
+                          ? 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+                          : 'border-slate-950 bg-slate-950/20 opacity-60'
                     }`}
                   >
                     {/* Icône de Récompense */}
