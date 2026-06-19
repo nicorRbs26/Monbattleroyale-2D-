@@ -10,7 +10,7 @@ interface GameHUDProps {
   stormPhase: number;
   stormTimer: number;
   stormIsShrinking: boolean;
-  killFeed: string[];
+  killFeed: { id: string; text: string }[];
   onConsumeItem: (type: 'medkit' | 'shield') => void;
   onSelectWeapon: (idx: number) => void;
   playMode: PlayMode;
@@ -113,9 +113,9 @@ export default function GameHUD({
 
         {/* FEED DE KILLS (FLUX D'ÉLIMINATIONS) */}
         <div className="flex flex-col gap-1.5 max-w-[280px] w-full text-right bg-slate-950/40 p-2 rounded-lg max-h-[140px] overflow-hidden">
-          {killFeed.slice(-4).map((feed, i) => (
-            <div key={i} className="text-[11px] text-slate-300 bg-slate-950/80 px-2 py-1 rounded border border-slate-900/60 font-sans truncate shadow-md animate-fade-in-down">
-              {feed}
+          {killFeed.slice(-4).map((entry) => (
+            <div key={entry.id} className="text-[11px] text-slate-300 bg-slate-950/80 px-2 py-1 rounded border border-slate-900/60 font-sans truncate shadow-md animate-fade-in-down">
+              {entry.text}
             </div>
           ))}
           {killFeed.length === 0 && (
@@ -384,14 +384,8 @@ export default function GameHUD({
         {/* Armes en mini-slots */}
         <div className="grid grid-cols-2 gap-2 w-full">
           {/* Slot 1 */}
-          <div
-            role="button"
-            tabIndex={0}
+          <button
             onClick={() => onSelectWeapon(0)}
-            onTouchStart={(e) => {
-              if (e.cancelable) e.preventDefault();
-              onSelectWeapon(0);
-            }}
             className={`border rounded-xl px-2 py-1.5 flex flex-col justify-center items-center h-16 text-center transition-all relative cursor-pointer ${
               player.activeWeaponIndex === 0 ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-slate-800'
             } ${player.weapons[0] ? RARITY_COLORS[player.weapons[0].rarity] : 'bg-slate-950/40 border-dashed text-slate-600'}`}
@@ -403,30 +397,24 @@ export default function GameHUD({
                 <span className="text-[10px] font-mono font-bold text-slate-300 flex items-center gap-1.5">
                   {player.weapons[0].currentClip}/{player.weapons[0].clipSize}
                   {player.activeWeaponIndex === 0 && player.weapons[0].currentClip < player.weapons[0].clipSize && player.ammo[player.weapons[0].type] > 0 && (
-                    <button 
+                    <span 
+                      role="button"
                       onClick={(e) => { e.stopPropagation(); onReload?.(); }}
                       className="bg-slate-800 hover:bg-slate-700 p-0.5 rounded border border-slate-700 animate-pulse active:scale-90"
-                      title="Recharger (R)"
                     >
                       🔄
-                    </button>
+                    </span>
                   )}
                 </span>
               </div>
             ) : (
               <span className="text-[10px] italic mt-2 text-slate-600">Vide</span>
             )}
-          </div>
+          </button>
 
           {/* Slot 2 */}
-          <div
-            role="button"
-            tabIndex={0}
+          <button
             onClick={() => onSelectWeapon(1)}
-            onTouchStart={(e) => {
-              if (e.cancelable) e.preventDefault();
-              onSelectWeapon(1);
-            }}
             className={`border rounded-xl px-2 py-1.5 flex flex-col justify-center items-center h-16 text-center transition-all relative cursor-pointer ${
               player.activeWeaponIndex === 1 ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-slate-800'
             } ${player.weapons[1] ? RARITY_COLORS[player.weapons[1].rarity] : 'bg-slate-950/40 border-dashed text-slate-600'}`}
@@ -438,32 +426,26 @@ export default function GameHUD({
                 <span className="text-[10px] font-mono font-bold text-slate-300 flex items-center gap-1.5">
                   {player.weapons[1].currentClip}/{player.weapons[1].clipSize}
                   {player.activeWeaponIndex === 1 && player.weapons[1].currentClip < player.weapons[1].clipSize && player.ammo[player.weapons[1].type] > 0 && (
-                    <button 
+                    <span 
+                      role="button"
                       onClick={(e) => { e.stopPropagation(); onReload?.(); }}
                       className="bg-slate-800 hover:bg-slate-700 p-0.5 rounded border border-slate-700 animate-pulse active:scale-90"
-                      title="Recharger (R)"
                     >
                       🔄
-                    </button>
+                    </span>
                   )}
                 </span>
               </div>
             ) : (
               <span className="text-[10px] italic mt-2 text-slate-600">Vide</span>
             )}
-          </div>
+          </button>
         </div>
 
         {/* Consommables (Soin et Potion) & Emote pour mobile */}
         <div className="flex gap-2 w-full justify-between items-center">
           <button
             onClick={() => onConsumeItem('medkit')}
-            onTouchStart={(e) => {
-              if (player.medkits > 0 && player.health < 100) {
-                if (e.cancelable) e.preventDefault();
-                onConsumeItem('medkit');
-              }
-            }}
             disabled={player.medkits <= 0 || player.health >= 100}
             className={`flex-1 flex justify-center items-center gap-1.5 py-2.5 px-2.5 h-11 border-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
               player.medkits > 0 && player.health < 100
@@ -476,12 +458,6 @@ export default function GameHUD({
 
           <button
             onClick={() => onConsumeItem('shield')}
-            onTouchStart={(e) => {
-              if (player.shieldPotions > 0 && player.shield < 100) {
-                if (e.cancelable) e.preventDefault();
-                onConsumeItem('shield');
-              }
-            }}
             disabled={player.shieldPotions <= 0 || player.shield >= 100}
             className={`flex-1 flex justify-center items-center gap-1.5 py-2.5 px-2.5 h-11 border-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
               player.shieldPotions > 0 && player.shield < 100
@@ -495,10 +471,6 @@ export default function GameHUD({
           {equippedEmote && equippedEmote !== 'none' && onTriggerEmote && (
             <button
               onClick={onTriggerEmote}
-              onTouchStart={(e) => {
-                if (e.cancelable) e.preventDefault();
-                onTriggerEmote();
-              }}
               className="px-4 py-2.5 h-11 rounded-xl bg-slate-900 border border-slate-700 hover:border-amber-500 text-amber-400 text-xs font-black active:scale-95 transition-all text-center cursor-pointer"
             >
               💬 {getEmoteEmojiLocal(equippedEmote)}

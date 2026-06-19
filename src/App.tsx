@@ -90,7 +90,7 @@ export default function App() {
   const [stormPhase, setStormPhase] = useState<number>(1);
   const [stormTimer, setStormTimer] = useState<number>(60);
   const [stormIsShrinking, setStormIsShrinking] = useState<boolean>(false);
-  const [killFeed, setKillFeed] = useState<string[]>([]);
+  const [killFeed, setKillFeed] = useState<{ id: string; text: string }[]>([]);
   const [spectatorMode, setSpectatorMode] = useState<boolean>(false);
   const [spectatingName, setSpectatingName] = useState<string>('');
 
@@ -243,7 +243,8 @@ export default function App() {
         if (reloadAmt > 0) {
           activeW.currentClip += reloadAmt;
           p.ammo[activeW.type] -= reloadAmt;
-          p.lastShootTime = now + 1200; // Temps de rechargement simulé
+          // Compenser fireRate pour ne pas rajouter un délai de tir après le reload
+          p.lastShootTime = now + 1200 - activeW.fireRate; 
           sounds.playHeal(); // Son de recharge léger
           spawnParticlesCircle(p.x, p.y, '#38bdf8', 10); // Particules de recharge bleues
         }
@@ -255,6 +256,9 @@ export default function App() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
+      // Empêcher les raccourcis système si on tape dans un input (bien qu'il n'y en ait pas bcp ici)
+      if (document.activeElement?.tagName === 'INPUT') return;
+
       keysPressedRef.current[key] = true;
       keysPressedRef.current[e.code.toLowerCase()] = true;
 
@@ -296,11 +300,20 @@ export default function App() {
       keysPressedRef.current[e.code.toLowerCase()] = false;
     };
 
+    const handleWindowMouseUp = (e: MouseEvent) => {
+      if (e.button === 0) {
+        isMouseDownRef.current = false;
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
     };
   }, [gameState]);
 
@@ -377,15 +390,23 @@ export default function App() {
   const consumeItem = (type: 'medkit' | 'shield') => {
     const p = playerRef.current;
     if (p && p.alive && !p.knocked) {
+      const now = Date.now();
+      if (p.lastHealTime && now - p.lastHealTime < 2500) {
+        // Trop tôt pour soigner (2.5s de cooldown)
+        return;
+      }
+
       if (type === 'medkit' && p.medkits > 0 && p.health < 100) {
         p.medkits -= 1;
         p.health = Math.min(100, p.health + 50);
+        p.lastHealTime = now;
         sounds.playHeal();
         // Particules de soin
         spawnParticlesCircle(p.x, p.y, '#10b981', 12);
       } else if (type === 'shield' && p.shieldPotions > 0 && p.shield < 100) {
         p.shieldPotions -= 1;
         p.shield = Math.min(100, p.shield + 50);
+        p.lastHealTime = now;
         sounds.playHeal();
         spawnParticlesCircle(p.x, p.y, '#3b82f6', 12);
       }
@@ -723,12 +744,6 @@ export default function App() {
       }
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
-      if (e.button === 0) {
-        isMouseDownRef.current = false;
-      }
-    };
-
     const handleWheel = (e: WheelEvent) => {
       if (spectatorMode) {
         e.preventDefault();
@@ -741,7 +756,6 @@ export default function App() {
 
     canvas.addEventListener('mousemove', handleMouseMove, { passive: true });
     canvas.addEventListener('mousedown', handleMouseDown, { passive: true });
-    window.addEventListener('mouseup', handleMouseUp, { passive: true });
     canvas.addEventListener('wheel', handleWheel, { passive: false });
   };
 
@@ -1201,7 +1215,8 @@ export default function App() {
 
           if (!isSheltered) {
             // Dégât lent constant hors abris
-            char.health = Math.max(1, char.health - (1.2 / 60));
+            char.deathCause = "Corrodé par la pluie acide";
+            damageCharacter(char, 1.2 / 60, 'environment-acid-rain');
 
             // Splash acide d'illustration
             if (Math.random() < 0.12) {
@@ -1284,13 +1299,8 @@ export default function App() {
               if (dist <= comet.radius) {
                 const force = 1 - (dist / comet.radius);
                 const dmg = Math.round(18 + force * 24);
-                char.health = Math.max(0, char.health - dmg);
-
-                if (char.isPlayer && char.health <= 0) {
-                  pushKillFeed("☄️ [LAVA] Vous avez été désintégrés par une comète de magma !");
-                } else if (char.health <= 0) {
-                  pushKillFeed(`☄️ [LAVA] ${char.name} a été détruit par une comète magma !`);
-                }
+                char.deathCause = "Désintégré par une comète magma";
+                damageCharacter(char, dmg, 'environment-comet');
               }
             }
           });
@@ -1432,18 +1442,12 @@ export default function App() {
           const dist = getDistance(char.x, char.y, zone.x, zone.y);
           if (dist < zone.radius) {
             // 2.5 dégâts par seconde
-            char.health -= 2.5 / 60;
+            char.deathCause = "Asphyxié par la tempête de poison";
+            damageCharacter(char, 2.5 / 60, 'environment-poison');
             
             // Effet d'étincelles acides
             if (Math.random() < 0.08) {
               spawnParticlesCircle(char.x, char.y, '#16a34a', 3);
-            }
-
-            if (char.health <= 0) {
-              char.health = 0;
-              char.alive = false;
-              char.deathCause = "Asphyxié par la tempête de poison";
-              triggerCharacterDeath(char);
             }
           }
         });
@@ -1511,7 +1515,8 @@ export default function App() {
 
       // Effets de dégâts & soins
       if (onLava && char.alive) {
-        char.health -= 15 / 60; // 15 dégâts / sec
+        char.deathCause = "Noyé dans des coulées de magma";
+        damageCharacter(char, 15 / 60, 'environment-lava');
         if (Math.random() < 0.25) {
           particles.push({
             x: char.x + (Math.random() - 0.5) * 20,
@@ -1525,17 +1530,12 @@ export default function App() {
             type: 'spark'
           });
         }
-        if (char.health <= 0) {
-          char.health = 0;
-          char.alive = false;
-          char.deathCause = "Noyé dans des coulées de magma";
-          triggerCharacterDeath(char);
-          return; // Skip further checks for this entity
-        }
+        if (!char.alive) return;
       }
 
       if (onAcid && char.alive) {
-        char.health -= 6 / 60; // 6 dégâts / sec
+        char.deathCause = "Dissous par de l'acide toxique";
+        damageCharacter(char, 6 / 60, 'environment-acid');
         if (Math.random() < 0.2) {
           particles.push({
             x: char.x + (Math.random() - 0.5) * 16,
@@ -1549,13 +1549,7 @@ export default function App() {
             type: 'smoke'
           });
         }
-        if (char.health <= 0) {
-          char.health = 0;
-          char.alive = false;
-          char.deathCause = "Dissous par de l'acide toxique";
-          triggerCharacterDeath(char);
-          return;
-        }
+        if (!char.alive) return;
       }
 
       if (onHealer && char.alive && !char.knocked) {
@@ -1760,13 +1754,8 @@ export default function App() {
       const distToStormCenter = getDistance(player.x, player.y, storm.x, storm.y);
       if (distToStormCenter > storm.radius) {
         // Subit dégâts de zone
-        player.health -= storm.damage / 60; // par frame
-        if (player.health <= 0) {
-          player.health = 0;
-          player.alive = false;
-          player.deathCause = "Englouti par la tempête";
-          triggerCharacterDeath(player);
-        }
+        player.deathCause = "Englouti par la tempête";
+        damageCharacter(player, storm.damage / 60, 'environment-tempest');
       }
     }
 
@@ -1786,14 +1775,9 @@ export default function App() {
       // Check dégât de zone pour bots
       const dS = getDistance(char.x, char.y, storm.x, storm.y);
       if (dS > storm.radius) {
-        char.health -= storm.damage / 60;
-        if (char.health <= 0) {
-          char.health = 0;
-          char.alive = false;
-          char.deathCause = "Perdu dans la tempête";
-          triggerCharacterDeath(char);
-          return;
-        }
+        char.deathCause = "Perdu dans la tempête";
+        damageCharacter(char, storm.damage / 60, 'environment-tempest');
+        if (!char.alive) return;
       }
 
       if (char.knocked) {
@@ -1839,19 +1823,27 @@ export default function App() {
         
         // ÉTAPE 2: Se soigner si PV bas et à l'abri
         else if (char.health < 45 && char.medkits > 0) {
-          char.aiState = 'heal';
-          // Consommer immédiatement
-          char.medkits -= 1;
-          char.health = Math.min(100, char.health + 50);
-          sounds.playHeal();
-          spawnParticlesCircle(char.x, char.y, '#10b981', 8);
+          const nowHeal = Date.now();
+          if (!char.lastHealTime || nowHeal - char.lastHealTime > 2500) {
+            char.aiState = 'heal';
+            // Consommer immédiatement
+            char.medkits -= 1;
+            char.health = Math.min(100, char.health + 50);
+            char.lastHealTime = nowHeal;
+            sounds.playHeal();
+            spawnParticlesCircle(char.x, char.y, '#10b981', 8);
+          }
         } 
         else if (char.shield < 50 && char.shieldPotions > 0) {
-          char.aiState = 'heal';
-          char.shieldPotions -= 1;
-          char.shield = Math.min(100, char.shield + 50);
-          sounds.playHeal();
-          spawnParticlesCircle(char.x, char.y, '#3b82f6', 8);
+          const nowHeal = Date.now();
+          if (!char.lastHealTime || nowHeal - char.lastHealTime > 2500) {
+            char.aiState = 'heal';
+            char.shieldPotions -= 1;
+            char.shield = Math.min(100, char.shield + 50);
+            char.lastHealTime = nowHeal;
+            sounds.playHeal();
+            spawnParticlesCircle(char.x, char.y, '#3b82f6', 8);
+          }
         }
 
         // ÉTAPE 3: Réanimer un copain K.O en duo / squad
@@ -2423,7 +2415,8 @@ export default function App() {
           const reloadAmt = Math.min(activeW.clipSize, char.ammo[activeW.type]);
           activeW.currentClip = reloadAmt;
           char.ammo[activeW.type] -= reloadAmt;
-          char.lastShootTime = now + 1200; // Temps de rechargement simulé
+          // Compenser fireRate
+          char.lastShootTime = now + 1200 - activeW.fireRate; 
           sounds.playHeal(); // Son de recharge léger
         }
       }
@@ -2632,7 +2625,8 @@ export default function App() {
   };
 
   const pushKillFeed = (msg: string) => {
-    setKillFeed(prev => [...prev, msg].slice(-10)); // Conserver 10 max
+    const entry = { id: `feed-${Date.now()}-${Math.random()}`, text: msg };
+    setKillFeed(prev => [...prev, entry].slice(-10)); // Conserver 10 max
   };
 
   // --- RENDU 2D DE LA SCÈNE SUR LE CANVAS ---
