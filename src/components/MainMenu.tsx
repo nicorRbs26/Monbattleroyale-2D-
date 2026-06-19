@@ -783,12 +783,58 @@ export default function MainMenu({
                 <li><span className="text-slate-200 font-bold bg-slate-950 px-1.5 py-0.5 rounded mr-1">Aim / Visée</span> : Curseur de la Souris</li>
                 <li><span className="text-slate-200 font-bold bg-slate-950 px-1.5 py-0.5 rounded mr-1">Clic gauche</span> : Tirer votre arme</li>
                 <li><span className="text-slate-200 font-bold bg-slate-950 px-1.5 py-0.5 rounded mr-1">Espace</span> ou <span className="text-slate-200 font-bold bg-slate-950 px-1.5 py-0.5 rounded mr-1">Shift L</span> : Dash rapide</li>
-                <li><span className="text-slate-200 font-bold bg-slate-950 px-1.5 py-0.5 rounded mr-1">A</span> ou <span className="text-slate-200 font-bold bg-slate-950 px-1.5 py-0.5 rounded mr-1">Mains libres</span> : Ramassage auto des loots au sol</li>
-                <li><span className="text-slate-200 font-bold bg-slate-950 px-1.5 py-0.5 rounded mr-1">Molette / Clic HUD</span> : Changer d'arme</li>
               </ul>
+            </div>
+
+            {/* vibe: Nouveau Système de Quêtes Journalières et Hebdomadaires */}
+            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl font-sans flex flex-col gap-3">
+              <h4 className="text-xs font-mono text-amber-500 uppercase tracking-widest font-bold flex justify-between items-center">
+                <span>📜 Quêtes Actives</span>
+                <span className="text-[10px] bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-lg border border-amber-500/20">XP Bonus</span>
+              </h4>
               
-              <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-500 leading-normal">
-                💡 <span className="font-semibold text-slate-400">Tactique :</span> Restez toujours proche du centre du cercle pour éviter de subir les dégâts impitoyables de la tempête invisible !
+              <div className="flex flex-col gap-3 mt-1">
+                {(stats.activeQuests || []).map((quest) => {
+                  const progressPerc = Math.round(Math.min(100, (quest.currentValue / quest.targetValue) * 100));
+                  const isDone = quest.isCompleted;
+                  
+                  return (
+                    <div key={quest.id} className={`p-3 rounded-xl border transition-all ${isDone ? 'bg-emerald-500/5 border-emerald-500/30' : 'bg-slate-950/40 border-slate-800'}`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex gap-2 items-center">
+                          <span className="text-base">{quest.category === 'daily' ? '📅' : '🗓️'}</span>
+                          <div>
+                            <p className={`text-[11px] font-bold tracking-tight ${isDone ? 'text-emerald-400 line-through' : 'text-slate-200'}`}>
+                              {quest.description}
+                            </p>
+                            <p className="text-[9px] text-slate-500 font-mono uppercase tracking-widest">
+                              {quest.category === 'daily' ? 'Journalière' : 'Hebdomadaire'} • Reward: {quest.rewardXp} XP
+                            </p>
+                          </div>
+                        </div>
+                        {isDone && <span className="text-emerald-500 text-xs">✓</span>}
+                      </div>
+                      
+                      {!isDone && (
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex justify-between text-[8.5px] font-mono text-slate-500">
+                            <span>Progression</span>
+                            <span>{quest.currentValue} / {quest.targetValue}</span>
+                          </div>
+                          <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                            <div 
+                              className={`h-full transition-all duration-500 ${quest.category === 'daily' ? 'bg-amber-500' : 'bg-indigo-500'}`}
+                              style={{ width: `${progressPerc}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {(!stats.activeQuests || stats.activeQuests.length === 0) && (
+                  <p className="text-xs text-slate-500 italic text-center py-2">Aucune quête active pour le moment.</p>
+                )}
               </div>
             </div>
 

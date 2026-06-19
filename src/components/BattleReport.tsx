@@ -7,6 +7,7 @@ interface BattleReportProps {
   rank: number;
   kills: number;
   survivedTime: number;
+  questXp?: number; // vibe: XP supplémentaire gagnée via les quêtes
   mode: PlayMode;
   weaponOfChoice: string;
   deathCause: string;
@@ -41,6 +42,7 @@ export default function BattleReport({
   patternStyle,
   onRestart,
   stats,
+  questXp = 0, // vibe: XP gagnée par les quêtes
 }: BattleReportProps) {
   const [reportText, setReportText] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
@@ -49,7 +51,7 @@ export default function BattleReport({
 
   // --- CALCULS DE PROGRESSION D'EXPÉRIENCE ---
   const matchXp = calculateMatchXp(rank, kills, survivedTime);
-  const totalEarnedXp = matchXp.totalEarnedXp;
+  const totalEarnedXp = matchXp.totalEarnedXp + questXp;
 
   // Évaluation d'avant-partie
   const finalLevel = stats.level || 1;
@@ -284,8 +286,8 @@ export default function BattleReport({
                 <span className="text-slate-200 font-bold font-sans">+{matchXp.rankXp} XP</span>
               </div>
               <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/50">
-                <span className="text-slate-500 block mb-1">🎮 Forfait d'Entrée</span>
-                <span className="text-amber-500 font-bold font-sans">+{matchXp.gamesPlayedXp} XP</span>
+                <span className="text-slate-500 block mb-1">📜 Quêtes Journalières</span>
+                <span className="text-amber-500 font-bold font-sans">+{questXp} XP</span>
               </div>
             </div>
 

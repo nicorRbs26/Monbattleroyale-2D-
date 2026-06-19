@@ -6,7 +6,7 @@ import MainMenu from './components/MainMenu';
 import GameHUD from './components/GameHUD';
 import SpectatorControls from './components/SpectatorControls';
 import BattleReport from './components/BattleReport';
-import { calculateMatchXp, getXpRequired } from './progression';
+import { calculateMatchXp, getXpRequired, generateDailyQuests, generateWeeklyQuests, updateQuestsOnEvent } from './progression';
 
 // Helper d'émote emoji
 function getEmoteEmoji(emoteId: string | undefined): string {
@@ -27,6 +27,10 @@ const DEFAULT_STATS: PlayerStats = {
   xp: 0,
   equippedWeaponEffect: 'none',
   equippedEmote: 'none',
+  healsUsed: 0,
+  distanceTraveled: 0,
+  questsCompleted: [],
+  activeQuests: [],
 };
 
 const GRID_CELL_SIZE = 125;
@@ -115,6 +119,7 @@ export default function App() {
   // End game stats summary
   const [endGameRank, setEndGameRank] = useState<number>(40);
   const [endGameKills, setEndGameKills] = useState<number>(0);
+  const [endGameQuestXp, setEndGameQuestXp] = useState<number>(0); // vibe: Stocke l'XP des quêtes pour le Battle Report
   const [endGameTime, setEndGameTime] = useState<number>(0);
   const [weaponOfChoice, setWeaponOfChoice] = useState<string>('Pistolet S9');
   const [deathCause, setDeathCause] = useState<string>('Inconnue');
@@ -221,16 +226,39 @@ export default function App() {
   const mateRef = useRef<Character | null>(null);
   const spectatorTargetIdxRef = useRef<number>(0);
   const matchStartTimeRef = useRef<number>(0);
+  
+  // vibe: Refs pour le suivi des quêtes durant le match (évite re-renders fréquents)
+  const matchKillsRef = useRef<number>(0);
+  const matchKillsByTypeRef = useRef<Record<WeaponType, number>>({ pistol: 0, shotgun: 0, rifle: 0, sniper: 0, rocket: 0 });
+  const matchDistanceTraveledRef = useRef<number>(0);
+  const matchHealsUsedRef = useRef<number>(0);
+  const lastPlayerPosRef = useRef<{ x: number, y: number } | null>(null);
 
   // Load stats on initiatisation
   useEffect(() => {
     const saved = localStorage.getItem('aura_royale_2d_stats');
     if (saved) {
       try {
-        setStats(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        // Initialiser les quêtes et stats additionnelles si absentes
+        if (!parsed.activeQuests || parsed.activeQuests.length === 0) {
+          parsed.activeQuests = parsed.activeQuests || [...generateDailyQuests(3), ...generateWeeklyQuests(2)];
+          parsed.healsUsed = parsed.healsUsed || 0;
+          parsed.distanceTraveled = parsed.distanceTraveled || 0;
+          parsed.questsCompleted = parsed.questsCompleted || [];
+        }
+        setStats(parsed);
       } catch (err) {
         console.error('Failed to load local stats', err);
       }
+    } else {
+      // New user
+      const initialStats = {
+        ...DEFAULT_STATS,
+        activeQuests: [...generateDailyQuests(3), ...generateWeeklyQuests(2)]
+      };
+      setStats(initialStats);
+      localStorage.setItem('aura_royale_2d_stats', JSON.stringify(initialStats));
     }
   }, []);
 
@@ -408,6 +436,7 @@ export default function App() {
         p.medkits -= 1;
         p.health = Math.min(100, p.health + 50);
         p.lastHealTime = now;
+        matchHealsUsedRef.current++; // vibe: Track for quests
         sounds.playHeal();
         // Particules de soin
         spawnParticlesCircle(p.x, p.y, '#10b981', 12);
@@ -415,6 +444,7 @@ export default function App() {
         p.shieldPotions -= 1;
         p.shield = Math.min(100, p.shield + 50);
         p.lastHealTime = now;
+        matchHealsUsedRef.current++; // vibe: Track for quests
         sounds.playHeal();
         spawnParticlesCircle(p.x, p.y, '#3b82f6', 12);
       }
@@ -435,6 +465,12 @@ export default function App() {
     setSpectatorCamType('follow');
     setFreeCamZoom(1.0);
     freeCamPosRef.current = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
+    
+    // vibe: Réinitialiser le suivi des quêtes pour le nouveau match
+    matchKillsByTypeRef.current = { pistol: 0, shotgun: 0, rifle: 0, sniper: 0, rocket: 0 };
+    matchDistanceTraveledRef.current = 0;
+    matchHealsUsedRef.current = 0;
+
     setWeatherEvent('none');
     setWeatherDuration(0);
     weatherEventTimerRef.current = 20; // Premier climat après 20 sec de répit
@@ -1770,7 +1806,13 @@ export default function App() {
 
         // Simuler collision avec structures et map
         if (vx !== 0 || vy !== 0) {
+          const oldX = player.x;
+          const oldY = player.y;
           handleCharacterMovementWithCollisions(player, vx, vy, structures);
+          
+          // vibe: Track distance traveled for marathon quests
+          const distMoved = getDistance(player.x, player.y, oldX, oldY);
+          matchDistanceTraveledRef.current += distMoved;
         }
 
         // Tirs manuels si pression clic gauche ou analogiques ou tactile
@@ -2257,9 +2299,53 @@ export default function App() {
 
     // Calculer XP et niveaux
     const earnedXpResult = calculateMatchXp(finalRank, finalKills, timeSurv);
+    
+    // vibe: Mise à jour des quêtes à la fin du match
+    let questEarnedXp = 0;
+    let tempQuests = [...stats.activeQuests];
+    
+    // 1. Kills totaux
+    if (finalKills > 0) {
+      const resKills = updateQuestsOnEvent(tempQuests, 'kills', finalKills);
+      tempQuests = resKills.updatedQuests;
+      questEarnedXp += resKills.earnedXp;
+    }
+    
+    // 2. Kills par type d'arme
+    Object.entries(matchKillsByTypeRef.current).forEach(([wType, count]) => {
+      const typedCount = count as number;
+      if (typedCount > 0) {
+        const resW = updateQuestsOnEvent(tempQuests, 'weapon_specific_kills', typedCount, wType as any);
+        tempQuests = resW.updatedQuests;
+        questEarnedXp += resW.earnedXp;
+      }
+    });
+    
+    // 3. Distance parcourue
+    const distInt = Math.round(matchDistanceTraveledRef.current / 10); // Diviser par 10 pour avoir des "mètres" logiques
+    if (distInt > 0) {
+      const resDist = updateQuestsOnEvent(tempQuests, 'distance', distInt);
+      tempQuests = resDist.updatedQuests;
+      questEarnedXp += resDist.earnedXp;
+    }
+    
+    // 4. Temps de survie (si quête hebdomadaire)
+    if (timeSurv > 0) {
+      const resSurv = updateQuestsOnEvent(tempQuests, 'survival', timeSurv);
+      tempQuests = resSurv.updatedQuests;
+      questEarnedXp += resSurv.earnedXp;
+    }
+    
+    // 5. Soins utilisés
+    if (matchHealsUsedRef.current > 0) {
+      const resHeal = updateQuestsOnEvent(tempQuests, 'heal', matchHealsUsedRef.current);
+      tempQuests = resHeal.updatedQuests;
+      questEarnedXp += resHeal.earnedXp;
+    }
+
     let currentLvl = stats.level ?? 1;
     let currentXp = stats.xp ?? 0;
-    let xpToAdd = earnedXpResult.totalEarnedXp;
+    let xpToAdd = earnedXpResult.totalEarnedXp + questEarnedXp;
 
     while (xpToAdd > 0) {
       const required = getXpRequired(currentLvl);
@@ -2280,11 +2366,15 @@ export default function App() {
       wins: stats.wins + (finalRank === 1 ? 1 : 0),
       kills: stats.kills + finalKills,
       top10: stats.top10 + (finalRank <= 10 ? 1 : 0),
-      history: [newHistory, ...stats.history].slice(0, 20), // Conserver les 20 derniers
+      history: [newHistory, ...stats.history].slice(0, 20),
       level: currentLvl,
       xp: currentXp,
       equippedWeaponEffect: stats.equippedWeaponEffect || 'none',
       equippedEmote: stats.equippedEmote || 'none',
+      healsUsed: (stats.healsUsed || 0) + matchHealsUsedRef.current,
+      distanceTraveled: (stats.distanceTraveled || 0) + Math.round(matchDistanceTraveledRef.current / 10),
+      questsCompleted: stats.questsCompleted || [], // On pourrait y ajouter les IDs complétés ici
+      activeQuests: tempQuests,
     };
 
     setStats(newStats);
@@ -2293,6 +2383,7 @@ export default function App() {
     // Configurer rapports de combat finaux
     setEndGameRank(finalRank);
     setEndGameKills(finalKills);
+    setEndGameQuestXp(questEarnedXp); // vibe: On transmet l'XP des quêtes
     setEndGameTime(timeSurv);
     setWeaponOfChoice(finalWeapon);
     setGameState('report');
@@ -2341,6 +2432,11 @@ export default function App() {
           attacker.kills += 1;
           if (attacker.isPlayer) {
             setKills(attacker.kills);
+            // vibe: Track kill by weapon type for specific quests
+            const activeW = attacker.weapons[attacker.activeWeaponIndex];
+            if (activeW) {
+              matchKillsByTypeRef.current[activeW.type] = (matchKillsByTypeRef.current[activeW.type] || 0) + 1;
+            }
           }
           char.deathCause = `Éliminé par ${attacker.name}`;
         } else {
@@ -2522,6 +2618,7 @@ export default function App() {
           type: 'bullet',
           radius: 3,
           teamId: char.teamId,
+          isLegendary: activeW.rarity === 'legendary',
         });
       }
     } else if (activeW.type === 'rocket') {
@@ -2540,6 +2637,7 @@ export default function App() {
         type: 'rocket',
         radius: 7,
         teamId: char.teamId,
+        isLegendary: activeW.rarity === 'legendary',
       });
     } else {
       // Armes normales : 1 balle droite avec légère dispersion
@@ -2560,6 +2658,7 @@ export default function App() {
         type: 'bullet',
         radius: 3.5,
         teamId: char.teamId,
+        isLegendary: activeW.rarity === 'legendary',
       });
     }
   };
@@ -3391,8 +3490,40 @@ export default function App() {
       else if (item.rarity === 'epic') glowColor = '#a855f7';
       else if (item.rarity === 'legendary') glowColor = '#f59e0b';
 
+      // vibe: Ajout d'effets visuels uniques pour le butin légendaire (pulsations, auras)
+      if (item.rarity === 'legendary') {
+        const pulse = 1.2 + Math.sin(Date.now() * 0.003) * 0.2;
+        const auraAlpha = 0.3 + Math.sin(Date.now() * 0.003) * 0.15;
+        
+        ctx.save();
+        const grad = ctx.createRadialGradient(ix, iy, 0, ix, iy, item.radius * 3 * pulse);
+        grad.addColorStop(0, `rgba(245, 158, 11, ${auraAlpha})`);
+        grad.addColorStop(0.5, `rgba(245, 158, 11, ${auraAlpha * 0.5})`);
+        grad.addColorStop(1, 'rgba(245, 158, 11, 0)');
+        
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(ix, iy, item.radius * 3 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Particules étincelantes statiques/aléatoires
+        ctx.fillStyle = '#fbbf24';
+        const time = Date.now() * 0.001;
+        for (let i = 0; i < 4; i++) {
+          const angle = time + i * (Math.PI / 2);
+          const dist = item.radius * (1.5 + Math.sin(time * 2 + i) * 0.5);
+          const px = ix + Math.cos(angle) * dist;
+          const py = iy + Math.sin(angle) * dist;
+          const pSize = 1.5 + Math.sin(time * 5 + i) * 0.5;
+          ctx.beginPath();
+          ctx.arc(px, py, pSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
       ctx.shadowColor = glowColor;
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = item.rarity === 'legendary' ? 25 : 12;
 
       ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
       ctx.beginPath();
@@ -3616,6 +3747,23 @@ export default function App() {
         ctx.globalAlpha = 0.5; // Rendre légèrement transparent si c'est toi ou allié
       }
 
+      // vibe: Aura légendaire si le perso porte une arme de rareté légendaire
+      const charActiveW = char.weapons[char.activeWeaponIndex];
+      if (charActiveW && charActiveW.rarity === 'legendary') {
+        const p = 1 + Math.sin(Date.now() * 0.004) * 0.15;
+        const aAlpha = 0.2 + Math.sin(Date.now() * 0.004) * 0.1;
+        ctx.save();
+        const characterAura = ctx.createRadialGradient(cx, cy, 0, cx, cy, char.radius * 2.8 * p);
+        characterAura.addColorStop(0, `rgba(245, 158, 11, ${aAlpha})`);
+        characterAura.addColorStop(0.7, `rgba(245, 158, 11, ${aAlpha * 0.5})`);
+        characterAura.addColorStop(1, 'rgba(245, 158, 11, 0)');
+        ctx.fillStyle = characterAura;
+        ctx.beginPath();
+        ctx.arc(cx, cy, char.radius * 2.8 * p, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
       // Dessiner ombre légère
       ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
       ctx.beginPath();
@@ -3644,10 +3792,10 @@ export default function App() {
       ctx.stroke();
 
       // Équiper arme visuellement s'il en a une
-      const activeW = char.weapons[char.activeWeaponIndex];
-      if (activeW) {
-        ctx.strokeStyle = activeW.type === 'rocket' ? '#f97316' : activeW.type === 'sniper' ? '#a855f7' : '#475569';
-        ctx.lineWidth = activeW.type === 'sniper' ? 5 : 3.5;
+      const charActiveWVisual = char.weapons[char.activeWeaponIndex];
+      if (charActiveWVisual) {
+        ctx.strokeStyle = charActiveWVisual.type === 'rocket' ? '#f97316' : charActiveWVisual.type === 'sniper' ? '#a855f7' : '#475569';
+        ctx.lineWidth = charActiveWVisual.type === 'sniper' ? 5 : 3.5;
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.lineTo(cx + Math.cos(char.angle) * 26, cy + Math.sin(char.angle) * 26);
@@ -3780,12 +3928,41 @@ export default function App() {
       // Optimisation RAM : Frustum Culling dynamique
       if (isOutsideFrustum(proj.x, proj.y, proj.radius + 40)) return;
 
-      ctx.strokeStyle = proj.color;
-      ctx.lineWidth = proj.radius;
-      ctx.beginPath();
-      ctx.moveTo(toScreenX(proj.x - proj.vx * 1.5), toScreenY(proj.y - proj.vy * 1.5));
-      ctx.lineTo(toScreenX(proj.x), toScreenY(proj.y));
-      ctx.stroke();
+      // vibe: Effets visuels renforcés pour les projectiles légendaires
+      if (proj.isLegendary) {
+        ctx.save();
+        ctx.shadowColor = '#fbbf24';
+        ctx.shadowBlur = 10;
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = proj.radius * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(proj.x - proj.vx * 2), toScreenY(proj.y - proj.vy * 2));
+        ctx.lineTo(toScreenX(proj.x), toScreenY(proj.y));
+        ctx.stroke();
+        ctx.restore();
+
+        // Particules d'étincelles dorées
+        if (Math.random() > 0.6) {
+          particlesRef.current.push({
+            x: proj.x,
+            y: proj.y,
+            vx: (Math.random() - 0.5) * 2,
+            vy: (Math.random() - 0.5) * 2,
+            color: '#fbbf24',
+            size: 1 + Math.random() * 2,
+            life: 0.5,
+            decay: 0.1,
+            type: 'spark',
+          });
+        }
+      } else {
+        ctx.strokeStyle = proj.color;
+        ctx.lineWidth = proj.radius;
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(proj.x - proj.vx * 1.5), toScreenY(proj.y - proj.vy * 1.5));
+        ctx.lineTo(toScreenX(proj.x), toScreenY(proj.y));
+        ctx.stroke();
+      }
 
       // Si roquette, spawner de fines volutes de fumée
       if (proj.type === 'rocket' && Math.random() > 0.4) {
@@ -4503,6 +4680,7 @@ export default function App() {
           <BattleReport
             rank={endGameRank}
             kills={endGameKills}
+            questXp={endGameQuestXp}
             survivedTime={endGameTime}
             mode={playMode}
             weaponOfChoice={weaponOfChoice}

@@ -165,6 +165,7 @@ export interface Projectile {
   type: 'bullet' | 'rocket';
   radius: number;
   teamId: string;
+  isLegendary?: boolean;
 }
 
 export interface GameParticle {
@@ -212,6 +213,28 @@ export interface PlayerStats {
   xp?: number;
   equippedWeaponEffect?: string;
   equippedEmote?: string;
+  
+  // Stats and Quest tracking
+  healsUsed: number;
+  distanceTraveled: number;
+  questsCompleted: string[];
+  activeQuests: Quest[];
+}
+
+export type QuestType = 'kills' | 'distance' | 'survival' | 'heal' | 'weapon_specific_kills';
+
+export interface Quest {
+  id: string;
+  title: string;
+  description: string;
+  type: QuestType;
+  targetValue: number;
+  currentValue: number;
+  rewardXp: number;
+  isWeekly: boolean;
+  isCompleted: boolean;
+  weaponType?: WeaponType;
+  category: 'daily' | 'weekly';
 }
 
 export interface SupplyDrop {

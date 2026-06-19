@@ -190,6 +190,17 @@ export const CUSTOM_WEAPONS: WeaponDef[] = [
     spread: 0.04,
     bulletSpeed: 8,
     range: 600
+  },
+  {
+    nom: 'Katana de Plasma',
+    type: 'shotgun',
+    damage: 120,
+    fireRate: 800,
+    clipSize: 3,
+    rarity: 'legendary',
+    spread: 0.4,
+    bulletSpeed: 15,
+    range: 120
   }
 ];
 

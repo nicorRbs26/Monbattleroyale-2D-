@@ -1,3 +1,5 @@
+import { Quest, QuestType, WeaponType } from './types';
+
 export interface Reward {
   level: number;
   type: 'hat' | 'pattern' | 'emote' | 'weapon_effect';
@@ -69,5 +71,82 @@ export function isPatternLocked(pattern: string, playerLevel: number): boolean {
   if (pattern === 'camo' && playerLevel < 5) return true;
   if (pattern === 'lightning' && playerLevel < 10) return true;
   return false;
+}
+
+const DAILY_QUESTS_POOL: Partial<Quest>[] = [
+  { title: 'Chasseur de Têtes', description: 'Éliminer 3 adversaires', type: 'kills', targetValue: 3, rewardXp: 400, category: 'daily' },
+  { title: 'Marathonien', description: 'Parcourir 5000 mètres', type: 'distance', targetValue: 5000, rewardXp: 300, category: 'daily' },
+  { title: 'Soin d\'Urgence', description: 'Utiliser 4 objets de soin', type: 'heal', targetValue: 4, rewardXp: 250, category: 'daily' },
+  { title: 'Spécialiste-Pistolet', description: 'Faire 2 kills au pistolet', type: 'weapon_specific_kills', weaponType: 'pistol', targetValue: 2, rewardXp: 500, category: 'daily' },
+  { title: 'Maître du Fusil d\'Assaut', description: 'Faire 3 kills au fusil d\'assaut', type: 'weapon_specific_kills', weaponType: 'rifle', targetValue: 3, rewardXp: 550, category: 'daily' },
+  { title: 'Nettoyeur au Pompe', description: 'Faire 2 kills au fusil à pompe', type: 'weapon_specific_kills', weaponType: 'shotgun', targetValue: 2, rewardXp: 450, category: 'daily' },
+];
+
+const WEEKLY_QUESTS_POOL: Partial<Quest>[] = [
+  { title: 'Légende de la Survie', description: 'Survivre un total de 1200 secondes', type: 'survival', targetValue: 1200, rewardXp: 2000, category: 'weekly', isWeekly: true },
+  { title: 'Expert en Élimination', description: 'Éliminer 20 adversaires', type: 'kills', targetValue: 20, rewardXp: 2500, category: 'weekly', isWeekly: true },
+  { title: 'Voyageur de l\'Arène', description: 'Parcourir 25000 mètres', type: 'distance', targetValue: 25000, rewardXp: 1800, category: 'weekly', isWeekly: true },
+  { title: 'Sniper d\'Élite', description: 'Faire 5 kills au fusil de précision', type: 'weapon_specific_kills', weaponType: 'sniper', targetValue: 5, rewardXp: 3000, category: 'weekly', isWeekly: true },
+];
+
+export function generateDailyQuests(count: number = 3): Quest[] {
+  const shuffled = [...DAILY_QUESTS_POOL].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, count).map((q, i) => ({
+    ...q,
+    id: `daily-${Date.now()}-${i}`,
+    currentValue: 0,
+    isCompleted: false,
+    isWeekly: false,
+  } as Quest));
+}
+
+export function generateWeeklyQuests(count: number = 2): Quest[] {
+  const shuffled = [...WEEKLY_QUESTS_POOL].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, count).map((q, i) => ({
+    ...q,
+    id: `weekly-${Date.now()}-${i}`,
+    currentValue: 0,
+    isCompleted: false,
+    isWeekly: true,
+  } as Quest));
+}
+
+/**
+ * Met à jour le progrès des quêtes actives et retourne l'XP totale gagnée par les quêtes complétées
+ */
+export function updateQuestsOnEvent(
+  activeQuests: Quest[], 
+  type: QuestType, 
+  value: number, 
+  weaponType?: WeaponType
+): { updatedQuests: Quest[]; earnedXp: number; completedCount: number } {
+  let earnedXp = 0;
+  let completedCount = 0;
+  
+  const updatedQuests = activeQuests.map(q => {
+    if (q.isCompleted) return q;
+    if (q.type !== type) return q;
+    
+    // Pour les quêtes spécifiques à une arme
+    if (type === 'weapon_specific_kills' && q.weaponType !== weaponType) {
+      return q;
+    }
+
+    const newProg = q.currentValue + value;
+    const isNowCompleted = newProg >= q.targetValue;
+    
+    if (isNowCompleted && !q.isCompleted) {
+      earnedXp += q.rewardXp;
+      completedCount++;
+    }
+
+    return {
+      ...q,
+      currentValue: Math.min(newProg, q.targetValue),
+      isCompleted: isNowCompleted || q.isCompleted,
+    };
+  });
+
+  return { updatedQuests, earnedXp, completedCount };
 }
 
