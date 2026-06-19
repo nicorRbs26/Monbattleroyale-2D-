@@ -1,0 +1,6 @@
+{
+  "name": "Battle Royale 2D",
+  "description": "Un jeu de Battle Royale 2D immersif en vue de dessus avec carte procédurale, système de statistiques, cosmétiques, moteur de textures génératif par IA et événements climatiques interactifs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

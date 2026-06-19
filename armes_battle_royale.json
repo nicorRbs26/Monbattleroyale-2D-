@@ -1,0 +1,109 @@
+{
+    "armes": [
+        {
+            "nom": "Pistolet de Base",
+            "dégâts": 15,
+            "cadence_de_tir": 4.5,
+            "taille_chargeur": 12,
+            "rareté": 1
+        },
+        {
+            "nom": "Pistolet Automatique",
+            "dégâts": 12,
+            "cadence_de_tir": 9.0,
+            "taille_chargeur": 20,
+            "rareté": 3
+        },
+        {
+            "nom": "Mitraillette Légère",
+            "dégâts": 14,
+            "cadence_de_tir": 12.0,
+            "taille_chargeur": 30,
+            "rareté": 2
+        },
+        {
+            "nom": "SMG Compact",
+            "dégâts": 16,
+            "cadence_de_tir": 11.0,
+            "taille_chargeur": 35,
+            "rareté": 4
+        },
+        {
+            "nom": "Fusil d'Assaut Standard",
+            "dégâts": 24,
+            "cadence_de_tir": 6.5,
+            "taille_chargeur": 30,
+            "rareté": 3
+        },
+        {
+            "nom": "Fusil d'Assaut Tactique",
+            "dégâts": 28,
+            "cadence_de_tir": 7.0,
+            "taille_chargeur": 30,
+            "rareté": 6
+        },
+        {
+            "nom": "Fusil à Pompe de Chasse",
+            "dégâts": 85,
+            "cadence_de_tir": 0.8,
+            "taille_chargeur": 5,
+            "rareté": 2
+        },
+        {
+            "nom": "Fusil à Pompe Automatique",
+            "dégâts": 65,
+            "cadence_de_tir": 2.0,
+            "taille_chargeur": 8,
+            "rareté": 5
+        },
+        {
+            "nom": "Fusil de Sniper à Verrou",
+            "dégâts": 110,
+            "cadence_de_tir": 0.5,
+            "taille_chargeur": 1,
+            "rareté": 7
+        },
+        {
+            "nom": "Sniper Semi-Automatique",
+            "dégâts": 55,
+            "cadence_de_tir": 2.2,
+            "taille_chargeur": 10,
+            "rareté": 5
+        },
+        {
+            "nom": "Mitrailleuse Lourde",
+            "dégâts": 22,
+            "cadence_de_tir": 8.5,
+            "taille_chargeur": 100,
+            "rareté": 6
+        },
+        {
+            "nom": "Fusil Laser Cybernétique",
+            "dégâts": 35,
+            "cadence_de_tir": 5.0,
+            "taille_chargeur": 25,
+            "rareté": 8
+        },
+        {
+            "nom": "Lance-Grenades",
+            "dégâts": 75,
+            "cadence_de_tir": 1.2,
+            "taille_chargeur": 6,
+            "rareté": 7
+        },
+        {
+            "nom": "Canon Électromagnétique (Railgun)",
+            "dégâts": 150,
+            "cadence_de_tir": 0.3,
+            "taille_chargeur": 3,
+            "rareté": 9
+        },
+        {
+            "nom": "Le Désintégrateur",
+            "dégâts": 220,
+            "cadence_de_tir": 0.4,
+            "taille_chargeur": 5,
+            "rareté": 10
+        }
+    ]
+}
