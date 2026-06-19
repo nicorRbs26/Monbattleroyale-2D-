@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { PlayMode, PlayerStats, ArenaType } from '../types';
 import SkinCustomizer from './SkinCustomizer';
+import TouchHUDCustomizer, { TouchHUDLayout } from './TouchHUDCustomizer';
 import { LEVEL_REWARDS, getXpRequired } from '../progression';
 import { ARENA_THEMES, CUSTOM_WEAPONS } from '../utils';
 
@@ -83,7 +84,7 @@ export default function MainMenu({
   setControlOption,
 }: MainMenuProps) {
   const [showCustomizer, setShowCustomizer] = useState<boolean>(false);
-  const [activeSegment, setActiveSegment] = useState<'home' | 'progression' | 'weapons' | 'options'>('home');
+  const [activeSegment, setActiveSegment] = useState<'home' | 'progression' | 'weapons' | 'options' | 'touch-customizer'>('home');
 
   const playerLevel = stats.level || 1;
   const playerXp = stats.xp || 0;
@@ -483,6 +484,17 @@ export default function MainMenu({
                 <p className="text-xs text-slate-400 mt-2 font-sans leading-relaxed">
                   Contrôles virtuels affichés directement à l'écran. <span className="text-slate-300 font-bold">Joystick gauche</span> interactif pour le mouvement, <span className="text-slate-300 font-bold">joystick droit</span> d'aim auto-shoot, et gros boutons tactiles.
                 </p>
+                {controlOption === 'touch' && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveSegment('touch-customizer');
+                    }}
+                    className="mt-3.5 w-full bg-slate-800 hover:bg-slate-700 hover:text-amber-400 text-amber-500 border border-amber-500/20 hover:border-amber-500/50 font-sans font-black py-2.5 px-3.5 rounded-xl text-[11px] transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                  >
+                    ⚙️ PERSONNALISER LA DISPOSITION
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -527,6 +539,34 @@ export default function MainMenu({
               Confirmer et Retourner
             </button>
           </div>
+        </div>
+      ) : activeSegment === 'touch-customizer' ? (
+        <div className="animate-fade-in-up">
+          <TouchHUDCustomizer
+            initialLayout={(() => {
+              const saved = localStorage.getItem('br_touch_hud_layout');
+              if (saved) {
+                try {
+                  return JSON.parse(saved);
+                } catch (e) {}
+              }
+              return {
+                leftJoystick: { x: 15, y: 80 },
+                rightJoystick: { x: 80, y: 80 },
+                dashButton: { x: 82, y: 55 },
+                mobileHUD: { x: 50, y: 82 }
+              };
+            })()}
+            onSave={(newLayout) => {
+              localStorage.setItem('br_touch_hud_layout', JSON.stringify(newLayout));
+              // Save a custom event to notify App state of change if live update is needed
+              window.dispatchEvent(new Event('br_touch_layout_updated'));
+              setActiveSegment('options');
+            }}
+            onClose={() => {
+              setActiveSegment('options');
+            }}
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Character, Weapon, PlayMode } from '../types';
+import { TouchHUDLayout } from './TouchHUDCustomizer';
 
 interface GameHUDProps {
   player: Character;
@@ -18,6 +19,7 @@ interface GameHUDProps {
   spectatingName?: string;
   equippedEmote?: string;
   onTriggerEmote?: () => void;
+  touchLayout?: TouchHUDLayout;
 }
 
 const RARITY_COLORS = {
@@ -44,6 +46,7 @@ export default function GameHUD({
   spectatingName,
   equippedEmote,
   onTriggerEmote,
+  touchLayout,
 }: GameHUDProps) {
 
   // Assistant local emote helper
@@ -138,7 +141,9 @@ export default function GameHUD({
       </div>
 
       {/* SECTION INFÉRIEURE : HUD principal du joueur (HP, Boucliers, Inventaire) */}
-      <div className="flex flex-col md:flex-row justify-between items-end w-full gap-4">
+      
+      {/* 1. HUD ORDINATEUR (VISIBLE SUR DESKTOP) */}
+      <div className="hidden md:flex flex-row justify-between items-end w-full gap-4">
         
         {/* PV / PB et coéquipiers (si applicable) */}
         <div className="flex flex-col gap-3 w-full max-w-[320px] pointer-events-auto">
@@ -337,6 +342,166 @@ export default function GameHUD({
           )}
           
         </div>
+      </div>
+
+      {/* 2. HUD SMARTPHONE UNI-PANE SANS CONSTITUANTS GÊNANTS POUR LES JOYSTICKS */}
+      <div 
+        className="flex md:hidden flex-col items-center justify-center w-full max-w-[380px] mx-auto pointer-events-auto bg-slate-950/95 border-2 border-slate-800/90 p-3.5 rounded-2xl shadow-2xl backdrop-blur-md gap-3"
+        style={touchLayout ? {
+          position: 'absolute',
+          left: `${touchLayout.mobileHUD.x}%`,
+          top: `${touchLayout.mobileHUD.y}%`,
+          transform: 'translate(-50%, -50%)',
+        } : undefined}
+      >
+        
+        {/* PV & Bouclier side-by-side */}
+        <div className="flex gap-2 w-full text-[11px] font-bold font-mono">
+          {/* Points de vie */}
+          <div className="flex-1 flex flex-col gap-1">
+            <span className="text-emerald-400 flex items-center gap-1">❤️ PV : {player.health}/100</span>
+            <div className="w-full bg-slate-900 border border-slate-950 rounded h-3 overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-200 ${player.health < 30 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`}
+                style={{ width: `${player.health}%` }}
+              />
+            </div>
+          </div>
+          {/* Bouclier */}
+          <div className="flex-1 flex flex-col gap-1">
+            <span className="text-blue-400 flex items-center gap-1">🛡️ PB : {player.shield}/100</span>
+            <div className="w-full bg-slate-900 border border-slate-950 rounded h-3 overflow-hidden">
+              <div 
+                className="bg-blue-500 h-full transition-all duration-200"
+                style={{ width: `${player.shield}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Armes en mini-slots */}
+        <div className="grid grid-cols-2 gap-2 w-full">
+          {/* Slot 1 */}
+          <button
+            onClick={() => onSelectWeapon(0)}
+            onTouchStart={(e) => {
+              if (e.cancelable) e.preventDefault();
+              onSelectWeapon(0);
+            }}
+            className={`border rounded-xl px-2 py-1.5 flex flex-col justify-center items-center h-16 text-center transition-all relative cursor-pointer ${
+              player.activeWeaponIndex === 0 ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-slate-800'
+            } ${player.weapons[0] ? RARITY_COLORS[player.weapons[0].rarity] : 'bg-slate-950/40 border-dashed text-slate-600'}`}
+          >
+            <span className="text-[9px] text-slate-400 absolute top-1 left-2 font-bold uppercase tracking-wider">Slot 1</span>
+            {player.weapons[0] ? (
+              <div className="flex flex-col items-center mt-2.5">
+                <span className="text-xs font-black truncate max-w-[130px] leading-tight text-white">{player.weapons[0].name}</span>
+                <span className="text-[10px] font-mono font-bold text-slate-300">
+                  {player.weapons[0].currentClip}/{player.weapons[0].clipSize}
+                </span>
+              </div>
+            ) : (
+              <span className="text-[10px] italic mt-2 text-slate-600">Vide</span>
+            )}
+          </button>
+
+          {/* Slot 2 */}
+          <button
+            onClick={() => onSelectWeapon(1)}
+            onTouchStart={(e) => {
+              if (e.cancelable) e.preventDefault();
+              onSelectWeapon(1);
+            }}
+            className={`border rounded-xl px-2 py-1.5 flex flex-col justify-center items-center h-16 text-center transition-all relative cursor-pointer ${
+              player.activeWeaponIndex === 1 ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-slate-800'
+            } ${player.weapons[1] ? RARITY_COLORS[player.weapons[1].rarity] : 'bg-slate-950/40 border-dashed text-slate-600'}`}
+          >
+            <span className="text-[9px] text-slate-400 absolute top-1 left-2 font-bold uppercase tracking-wider">Slot 2</span>
+            {player.weapons[1] ? (
+              <div className="flex flex-col items-center mt-2.5">
+                <span className="text-xs font-black truncate max-w-[130px] leading-tight text-white">{player.weapons[1].name}</span>
+                <span className="text-[10px] font-mono font-bold text-slate-300">
+                  {player.weapons[1].currentClip}/{player.weapons[1].clipSize}
+                </span>
+              </div>
+            ) : (
+              <span className="text-[10px] italic mt-2 text-slate-600">Vide</span>
+            )}
+          </button>
+        </div>
+
+        {/* Consommables (Soin et Potion) & Emote pour mobile */}
+        <div className="flex gap-2 w-full justify-between items-center">
+          <button
+            onClick={() => onConsumeItem('medkit')}
+            onTouchStart={(e) => {
+              if (player.medkits > 0 && player.health < 100) {
+                if (e.cancelable) e.preventDefault();
+                onConsumeItem('medkit');
+              }
+            }}
+            disabled={player.medkits <= 0 || player.health >= 100}
+            className={`flex-1 flex justify-center items-center gap-1.5 py-2.5 px-2.5 h-11 border-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              player.medkits > 0 && player.health < 100
+                ? 'border-emerald-600/70 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-950/65 active:scale-95'
+                : 'border-slate-800 text-slate-600 opacity-50'
+            }`}
+          >
+            🩹 KIT PV ({player.medkits})
+          </button>
+
+          <button
+            onClick={() => onConsumeItem('shield')}
+            onTouchStart={(e) => {
+              if (player.shieldPotions > 0 && player.shield < 100) {
+                if (e.cancelable) e.preventDefault();
+                onConsumeItem('shield');
+              }
+            }}
+            disabled={player.shieldPotions <= 0 || player.shield >= 100}
+            className={`flex-1 flex justify-center items-center gap-1.5 py-2.5 px-2.5 h-11 border-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              player.shieldPotions > 0 && player.shield < 100
+                ? 'border-blue-600/70 bg-blue-950/40 text-blue-300 hover:bg-blue-950/65 active:scale-95'
+                : 'border-slate-800 text-slate-600 opacity-50'
+            }`}
+          >
+            🧪 POT PB ({player.shieldPotions})
+          </button>
+
+          {equippedEmote && equippedEmote !== 'none' && onTriggerEmote && (
+            <button
+              onClick={onTriggerEmote}
+              onTouchStart={(e) => {
+                if (e.cancelable) e.preventDefault();
+                onTriggerEmote();
+              }}
+              className="px-4 py-2.5 h-11 rounded-xl bg-slate-900 border border-slate-700 hover:border-amber-500 text-amber-400 text-xs font-black active:scale-95 transition-all text-center cursor-pointer"
+            >
+              💬 {getEmoteEmojiLocal(equippedEmote)}
+            </button>
+          )}
+        </div>
+
+        {/* Barre d'état de Dash miniature */}
+        <div className="flex justify-between items-center w-full border-t border-slate-850 pt-2 text-[10px] text-slate-400 font-mono">
+          <div className="flex gap-1.5 items-center">
+            <span className="font-bold">Charges :</span>
+            <div className="flex gap-0.5">
+              {[...Array(3)].map((_, i) => (
+                <span 
+                  key={i} 
+                  className={`text-xs ${i < player.dashCharges ? 'text-amber-400 filter drop-shadow' : 'text-slate-800'}`}
+                >
+                  ⚡
+                </span>
+              ))}
+            </div>
+          </div>
+          <span className="font-bold">
+            {player.dashCooldown > 0 ? `${(player.dashCooldown / 1000).toFixed(1)}s` : 'Dash OK'}
+          </span>
+        </div>
+
       </div>
     </div>
   );

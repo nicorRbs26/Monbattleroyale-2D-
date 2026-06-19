@@ -36,7 +36,10 @@ export default function App() {
   const [selectedArena, setSelectedArena] = useState<ArenaType | 'random'>('random');
   const [currentArena, setCurrentArena] = useState<ArenaType>('military_forest');
   const [controlOption, setControlOption] = useState<'keyboard' | 'gamepad' | 'touch'>(() => {
-    return (localStorage.getItem('br_control_option') as any) || 'keyboard';
+    const cached = localStorage.getItem('br_control_option');
+    if (cached) return cached as any;
+    const isTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0));
+    return isTouch ? 'touch' : 'keyboard';
   });
 
   // AI Customized Arenas States & Refs
@@ -89,6 +92,18 @@ export default function App() {
   const [spectatorMode, setSpectatorMode] = useState<boolean>(false);
   const [spectatingName, setSpectatingName] = useState<string>('');
 
+  // Mode Spectateur Avancé (Free Camera & Zoom)
+  const [spectatorCamType, setSpectatorCamType] = useState<'follow' | 'free'>('follow');
+  const [freeCamZoom, setFreeCamZoom] = useState<number>(1.0);
+  const freeCamPosRef = useRef({ x: MAP_SIZE / 2, y: MAP_SIZE / 2 });
+  const lastMousePosRef = useRef({ x: 0, y: 0 });
+
+  // Variations Climatologiques Météo (Acid Rain, Sandstorms, Magma Comets)
+  const [weatherEvent, setWeatherEvent] = useState<'none' | 'acid_rain' | 'sandstorm' | 'magma_comets'>('none');
+  const [weatherDuration, setWeatherDuration] = useState<number>(0);
+  const weatherEventTimerRef = useRef<number>(20); // Premier évènement après 20s
+  const cometsRef = useRef<{ id: string; x: number; y: number; timer: number; radius: number }[]>([]);
+
   // End game stats summary
   const [endGameRank, setEndGameRank] = useState<number>(40);
   const [endGameKills, setEndGameKills] = useState<number>(0);
@@ -131,10 +146,50 @@ export default function App() {
   const touchAimVectorRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isTouchShootingRef = useRef<boolean>(false);
   const prevGamepadButtonsRef = useRef<boolean[]>([]);
+  
+  // Suivi de l'identifiant des touches tactiles pour éviter les conflits multitouch
+  const leftTouchIdRef = useRef<number | null>(null);
+  const rightTouchIdRef = useRef<number | null>(null);
 
   // États réactifs d'affichage pour les visuels des joysticks sur mobile
   const [leftKnobPos, setLeftKnobPos] = useState({ x: 0, y: 0 });
   const [rightKnobPos, setRightKnobPos] = useState({ x: 0, y: 0 });
+
+  // Disposition personnalisée des touches tactiles chargée depuis localStorage
+  const [touchLayout, setTouchLayout] = useState<{
+    leftJoystick: { x: number; y: number };
+    rightJoystick: { x: number; y: number };
+    dashButton: { x: number; y: number };
+    mobileHUD: { x: number; y: number };
+  }>(() => {
+    const saved = localStorage.getItem('br_touch_hud_layout');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      leftJoystick: { x: 15, y: 80 },
+      rightJoystick: { x: 80, y: 80 },
+      dashButton: { x: 82, y: 55 },
+      mobileHUD: { x: 50, y: 82 },
+    };
+  });
+
+  useEffect(() => {
+    const handleLayoutUpdate = () => {
+      const saved = localStorage.getItem('br_touch_hud_layout');
+      if (saved) {
+        try {
+          setTouchLayout(JSON.parse(saved));
+        } catch (e) {}
+      }
+    };
+    window.addEventListener('br_touch_layout_updated', handleLayoutUpdate);
+    return () => {
+      window.removeEventListener('br_touch_layout_updated', handleLayoutUpdate);
+    };
+  }, []);
 
   // Camera tracking
   const cameraRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -310,6 +365,13 @@ export default function App() {
   const handleStartGame = () => {
     setGameState('playing');
     setSpectatorMode(false);
+    setSpectatorCamType('follow');
+    setFreeCamZoom(1.0);
+    freeCamPosRef.current = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
+    setWeatherEvent('none');
+    setWeatherDuration(0);
+    weatherEventTimerRef.current = 20; // Premier climat après 20 sec de répit
+    cometsRef.current = [];
     setKills(0);
     setKillFeed([]);
 
@@ -575,14 +637,33 @@ export default function App() {
 
     const handleMouseMove = (e: MouseEvent) => {
       const rect = canvas.getBoundingClientRect();
-      // Enregistrer coordonnées relatives à l'écran
-      mousePosRef.current.x = e.clientX - rect.left;
-      mousePosRef.current.y = e.clientY - rect.top;
+      const currentX = e.clientX - rect.left;
+      const currentY = e.clientY - rect.top;
+
+      // Si spectateur + caméra libre + bouton enfoncé -> faire glisser l'arène !
+      if (spectatorMode && spectatorCamType === 'free' && isMouseDownRef.current) {
+        const dx = currentX - lastMousePosRef.current.x;
+        const dy = currentY - lastMousePosRef.current.y;
+        freeCamPosRef.current.x -= dx * (1 / freeCamZoom);
+        freeCamPosRef.current.y -= dy * (1 / freeCamZoom);
+
+        // Garder dans les limites de l'arène
+        freeCamPosRef.current.x = Math.max(10, Math.min(MAP_SIZE - 10, freeCamPosRef.current.x));
+        freeCamPosRef.current.y = Math.max(10, Math.min(MAP_SIZE - 10, freeCamPosRef.current.y));
+      }
+
+      mousePosRef.current.x = currentX;
+      mousePosRef.current.y = currentY;
+      lastMousePosRef.current.x = currentX;
+      lastMousePosRef.current.y = currentY;
     };
 
     const handleMouseDown = (e: MouseEvent) => {
       if (e.button === 0) {
         isMouseDownRef.current = true;
+        const rect = canvas.getBoundingClientRect();
+        lastMousePosRef.current.x = e.clientX - rect.left;
+        lastMousePosRef.current.y = e.clientY - rect.top;
       }
     };
 
@@ -592,9 +673,20 @@ export default function App() {
       }
     };
 
-    canvas.addEventListener('mousemove', handleMouseMove);
-    canvas.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mouseup', handleMouseUp);
+    const handleWheel = (e: WheelEvent) => {
+      if (spectatorMode) {
+        e.preventDefault();
+        setFreeCamZoom(prev => {
+          const delta = e.deltaY > 0 ? -0.1 : 0.1;
+          return Math.max(0.4, Math.min(1.8, prev + delta));
+        });
+      }
+    };
+
+    canvas.addEventListener('mousemove', handleMouseMove, { passive: true });
+    canvas.addEventListener('mousedown', handleMouseDown, { passive: true });
+    window.addEventListener('mouseup', handleMouseUp, { passive: true });
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
   };
 
   // Répétition principale frame
@@ -615,7 +707,7 @@ export default function App() {
       canvas.height = parent.clientHeight;
     }
 
-    // 1. DÉCIDER DE LA CIBLE DE CAMÉRA (Suivre joueur, ou cible spectatée si mort)
+    // 1. DÉCIDER DE LA CIBLE DE CAMÉRA (Suivre joueur, ou cible spectatée si mort, ou caméra libre)
     let camTargetX = MAP_SIZE / 2;
     let camTargetY = MAP_SIZE / 2;
 
@@ -623,19 +715,29 @@ export default function App() {
     let viewingChar = playerRef.current;
 
     if (spectatorMode) {
-      const listBots = charactersRef.current.filter(c => c.alive && !c.isPlayer);
-      if (listBots.length > 0) {
-        const target = listBots[spectatorTargetIdxRef.current % listBots.length];
-        if (target) {
-          viewingChar = target;
-          setSpectatingName(target.name);
+      if (spectatorCamType === 'free') {
+        // Mode Caméra Libre spectateur
+        camTargetX = freeCamPosRef.current.x;
+        camTargetY = freeCamPosRef.current.y;
+      } else {
+        const listBots = charactersRef.current.filter(c => c.alive && !c.isPlayer);
+        if (listBots.length > 0) {
+          const target = listBots[spectatorTargetIdxRef.current % listBots.length];
+          if (target) {
+            viewingChar = target;
+            setSpectatingName(target.name);
+          }
+        }
+        if (viewingChar && viewingChar.alive) {
+          camTargetX = viewingChar.x;
+          camTargetY = viewingChar.y;
         }
       }
-    }
-
-    if (viewingChar && viewingChar.alive) {
-      camTargetX = viewingChar.x;
-      camTargetY = viewingChar.y;
+    } else {
+      if (viewingChar && viewingChar.alive) {
+        camTargetX = viewingChar.x;
+        camTargetY = viewingChar.y;
+      }
     }
 
     // Interpolation de la caméra pour un mouvement ultra fluide
@@ -972,6 +1074,175 @@ export default function App() {
       });
       pushKillFeed("☣️ [ALERTE TOXIQUE] Faille acide détectée ! Contamination imminente !");
       sounds.playExplosion();
+    }
+
+    // --- SYSTEME D'EVOLUTION CLIMATOLOGIQUE METEO EN CONTINU ---
+    weatherEventTimerRef.current -= 1 / 60;
+    if (weatherEventTimerRef.current <= 0) {
+      if (weatherEvent === 'none') {
+        // Selectionner un nouveau climat extreme aléatoire
+        const weathers: ('acid_rain' | 'sandstorm' | 'magma_comets')[] = ['acid_rain', 'sandstorm', 'magma_comets'];
+        const chosen = weathers[Math.floor(Math.random() * weathers.length)];
+        const duration = 25 + Math.random() * 10; // 25 à 35 secondes
+
+        setWeatherEvent(chosen);
+        setWeatherDuration(Math.round(duration));
+        weatherEventTimerRef.current = duration;
+
+        let noteText = "";
+        let noteType: 'danger' | 'warning' | 'info' = 'warning';
+        if (chosen === 'acid_rain') {
+          noteText = "🌧️ ACID RAIN DETECTION : L'eau corrosive ronge lentement le blindage hors des abris !";
+          noteType = 'warning';
+        } else if (chosen === 'sandstorm') {
+          noteText = "🌪️ SANDSTORM WARNING : Vision de détection drastiquement réduite par d'épais vents de sable !";
+          noteType = 'warning';
+        } else {
+          noteText = "☄️ COMPTE À REBOURS COMÈTES DE LAVA : Évitez les zones d'impact thermiques !";
+          noteType = 'danger';
+        }
+
+        setCenterNotification({
+          text: noteText,
+          type: noteType,
+          expiresAt: Date.now() + 6000,
+        });
+        pushKillFeed(`🚨 [METEO] Début d'un climat extrême : ${chosen.toUpperCase()} !`);
+        sounds.playExplosion();
+      } else {
+        // Retour au calme météo
+        setWeatherEvent('none');
+        setWeatherDuration(0);
+        weatherEventTimerRef.current = 30 + Math.random() * 15; // 30s de beau temps
+
+        setCenterNotification({
+          text: "☀️ RETOUR AU CALME : Le climat de l'arène s'est stabilisé.",
+          type: 'info',
+          expiresAt: Date.now() + 4000,
+        });
+        pushKillFeed("☀️ [CLIMAT] Le ciel de l'arène s'est apaisé.");
+      }
+    } else {
+      if (weatherEvent !== 'none') {
+        const remaining = Math.max(0, Math.round(weatherEventTimerRef.current));
+        if (remaining !== weatherDuration) {
+          setWeatherDuration(remaining);
+        }
+      }
+    }
+
+    // Simulation effective des impacts des climats actifs
+    if (weatherEvent === 'acid_rain') {
+      const buildings = structures.filter(s => s.type === 'structure');
+      characters.forEach(char => {
+        if (char.alive && !char.knocked) {
+          // Vérifier si à l'abri dans une structure métallique
+          const isSheltered = buildings.some(b => {
+            const hW = b.w / 2;
+            const hH = b.h / 2;
+            return char.x >= b.x - hW && char.x <= b.x + hW && char.y >= b.y - hH && char.y <= b.y + hH;
+          });
+
+          if (!isSheltered) {
+            // Dégât lent constant hors abris
+            char.health = Math.max(1, char.health - (1.2 / 60));
+
+            // Splash acide d'illustration
+            if (Math.random() < 0.12) {
+              particles.push({
+                x: char.x + (Math.random() - 0.5) * char.radius * 2,
+                y: char.y + (Math.random() - 0.5) * char.radius * 2,
+                vx: (Math.random() - 0.5) * 0.6,
+                vy: (Math.random() - 0.5) * 0.6,
+                color: '#22c55e',
+                size: 2 + Math.random() * 2,
+                life: 0.6 + Math.random() * 0.4,
+                decay: 0.05,
+                type: 'acid_splash' as any,
+              });
+            }
+          }
+        }
+      });
+    } 
+    
+    else if (weatherEvent === 'magma_comets') {
+      // Impact périodique d'une comète magma
+      if (Math.random() < 0.018) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * (storm.radius * 0.85);
+        const targetX = Math.max(100, Math.min(MAP_SIZE - 100, storm.x + Math.cos(angle) * dist));
+        const targetY = Math.max(100, Math.min(MAP_SIZE - 100, storm.y + Math.sin(angle) * dist));
+
+        // Placer l'indicateur de danger rouge au sol
+        particles.push({
+          x: targetX,
+          y: targetY,
+          vx: 0,
+          vy: 0,
+          color: 'rgba(239, 68, 68, 0.8)',
+          size: 70,
+          life: 2.0,
+          decay: 0.0083,
+          type: 'hazard_indicator' as any,
+        });
+
+        cometsRef.current.push({
+          id: `comet-${Date.now()}-${Math.random()}`,
+          x: targetX,
+          y: targetY,
+          timer: 2.0,
+          radius: 70,
+        });
+      }
+
+      // Traiter la descente et l'impact de chaque comète
+      const activeComets = cometsRef.current;
+      for (let i = activeComets.length - 1; i >= 0; i--) {
+        const comet = activeComets[i];
+        comet.timer -= 1 / 60;
+        if (comet.timer <= 0) {
+          sounds.playExplosion();
+
+          // Particules d'éclatement de flammes incendiaires
+          for (let pIdx = 0; pIdx < 16; pIdx++) {
+            const angle = Math.random() * Math.PI * 2;
+            const velocity = 2.0 + Math.random() * 3.5;
+            particles.push({
+              x: comet.x,
+              y: comet.y,
+              vx: Math.cos(angle) * velocity,
+              vy: Math.sin(angle) * velocity,
+              color: Math.random() > 0.4 ? '#f97316' : '#ef4444',
+              size: 4 + Math.random() * 6,
+              life: 1.0,
+              decay: 0.035,
+              type: 'fire' as any,
+            });
+          }
+
+          // Dégâts d'impact explosifs aux entités à proximité
+          characters.forEach(char => {
+            if (char.alive && !char.knocked) {
+              const dist = getDistance(char.x, char.y, comet.x, comet.y);
+              if (dist <= comet.radius) {
+                const force = 1 - (dist / comet.radius);
+                const dmg = Math.round(18 + force * 24);
+                char.health = Math.max(0, char.health - dmg);
+
+                if (char.isPlayer && char.health <= 0) {
+                  pushKillFeed("☄️ [LAVA] Vous avez été désintégrés par une comète de magma !");
+                } else if (char.health <= 0) {
+                  pushKillFeed(`☄️ [LAVA] ${char.name} a été détruit par une comète magma !`);
+                }
+              }
+            }
+          });
+
+          // Retirer de la pile de vol
+          activeComets.splice(i, 1);
+        }
+      }
     }
 
     // 3. Simuler les Supply Drops actifs
@@ -1541,13 +1812,15 @@ export default function App() {
           else {
             const activeEnemies = characters.filter(c => c.alive && c.teamId !== char.teamId);
             let closestEnemy: Character | null = null;
-            let minDist = 700; // Rayon de perception
+            const sandstormReduction = weatherEvent === 'sandstorm' ? 0.35 : 1.0;
+            const baseSight = 700 * sandstormReduction;
+            let minDist = baseSight; // Rayon de perception dynamique de l'IA
 
             activeEnemies.forEach(e => {
               const d = getDistance(char.x, char.y, e.x, e.y);
               // Vérifier si caché dans un buisson (rayon réduit à 120px)
               const standingInBush = structures.some(s => s.type === 'bush' && getDistance(s.x, s.y, e.x, e.y) < s.w / 2);
-              const appliedSight = standingInBush ? 120 : 700;
+              const appliedSight = (standingInBush ? 120 : 700) * sandstormReduction;
 
               if (d < appliedSight && d < minDist) {
                 minDist = d;
@@ -1614,7 +1887,7 @@ export default function App() {
         if (char.targetX && char.targetY) {
           const d = getDistance(char.x, char.y, char.targetX, char.targetY);
           if (d > 15) {
-            char.angle = Math.atan2(char.targetY - char.y, char.targetX - char.x);
+            char.angle = getSmartBotAngle(char, char.targetX, char.targetY, structures);
             const currentSpeed = char.speed * (char.tempSpeedMultiplier || 1.0);
             const vx = Math.cos(char.angle) * currentSpeed * 0.95;
             const vy = Math.sin(char.angle) * currentSpeed * 0.95;
@@ -1628,8 +1901,8 @@ export default function App() {
         if (ally && ally.alive && ally.knocked) {
           const d = getDistance(char.x, char.y, ally.x, ally.y);
           if (d > 35) {
-            // Marcher vers lui
-            char.angle = Math.atan2(ally.y - char.y, ally.x - char.x);
+            // Marcher vers lui avec angle d'évitement d'obstacles
+            char.angle = getSmartBotAngle(char, ally.x, ally.y, structures);
             const currentSpeed = char.speed * (char.tempSpeedMultiplier || 1.0);
             const vx = Math.cos(char.angle) * currentSpeed;
             const vy = Math.sin(char.angle) * currentSpeed;
@@ -1671,7 +1944,11 @@ export default function App() {
             speedFactor = (Math.random() - 0.5) * 0.6; // Zigzag latéral
           }
 
-          const moveAngle = char.angle + (speedFactor < 0 ? Math.PI : 0) + (Math.random() - 0.5) * 0.8;
+          // Évitement intelligent d'obstacles en combat
+          const driftX = enemy.x + (speedFactor < 0 ? -(enemy.x - char.x) * 1.5 : 0);
+          const driftY = enemy.y + (speedFactor < 0 ? -(enemy.y - char.y) * 1.5 : 0);
+          const moveAngle = getSmartBotAngle(char, driftX, driftY, structures);
+
           const currentSpeed = char.speed * (char.tempSpeedMultiplier || 1.0);
           const vx = Math.cos(moveAngle) * currentSpeed * Math.abs(speedFactor);
           const vy = Math.sin(moveAngle) * currentSpeed * Math.abs(speedFactor);
@@ -2017,6 +2294,9 @@ export default function App() {
       
       // Proposer le mode spectateur immédiat
       setSpectatorMode(true);
+      setSpectatorCamType('follow');
+      setFreeCamZoom(1.0);
+      freeCamPosRef.current = { x: char.x, y: char.y };
       spectatorTargetIdxRef.current = 0;
     }
   };
@@ -2174,7 +2454,60 @@ export default function App() {
     }
   };
 
-  // Collision boîte-cercle et déplacement pour personnages
+  // Algorithme d'évitement d'obstacles par balayage angulaire (Steering Pathfinding)
+  const getSmartBotAngle = (char: Character, targetX: number, targetY: number, structures: Building[]) => {
+    const directAngle = Math.atan2(targetY - char.y, targetX - char.x);
+    
+    // Anticiper le pas devant de 45px
+    const nextStepX = char.x + Math.cos(directAngle) * 45;
+    const nextStepY = char.y + Math.sin(directAngle) * 45;
+    
+    let blocker: Building | null = null;
+    for (let s of structures) {
+      if (s.type === 'bush') continue;
+      const halfW = s.w / 2;
+      const halfH = s.h / 2;
+      const closestX = Math.max(s.x - halfW, Math.min(nextStepX, s.x + halfW));
+      const closestY = Math.max(s.y - halfH, Math.min(nextStepY, s.y + halfH));
+      if (getDistance(nextStepX, nextStepY, closestX, closestY) < char.radius + 12) {
+        blocker = s;
+        break;
+      }
+    }
+
+    if (!blocker) {
+      return directAngle; // Pas de structure bloquante à proximité
+    }
+
+    // Tester des déviations angulaires alternées en cascade (Balayage)
+    const candidates = [0.75, -0.75, 1.45, -1.45];
+    for (let angleDev of candidates) {
+      const testAngle = directAngle + angleDev;
+      const testStepX = char.x + Math.cos(testAngle) * 55;
+      const testStepY = char.y + Math.sin(testAngle) * 55;
+      
+      let testBlocked = false;
+      for (let s of structures) {
+        if (s.type === 'bush') continue;
+        const halfW = s.w / 2;
+        const halfH = s.h / 2;
+        const closestX = Math.max(s.x - halfW, Math.min(testStepX, s.x + halfW));
+        const closestY = Math.max(s.y - halfH, Math.min(testStepY, s.y + halfH));
+        if (getDistance(testStepX, testStepY, closestX, closestY) < char.radius + 10) {
+          testBlocked = true;
+          break;
+        }
+      }
+      if (!testBlocked) {
+        return testAngle; // Trouvé un angle de contournement dégagé !
+      }
+    }
+
+    // Si tout est obstrué, s'éloigner du centre de l'obstacle
+    return Math.atan2(char.y - blocker.y, char.x - blocker.x);
+  };
+
+  // Collision boîte-cercle haute fidélité avec glissement polygonal fluide le long des angles
   const handleCharacterMovementWithCollisions = (
     char: Character,
     vx: number,
@@ -2188,28 +2521,52 @@ export default function App() {
     nextX = Math.max(char.radius, Math.min(MAP_SIZE - char.radius, nextX));
     nextY = Math.max(char.radius, Math.min(MAP_SIZE - char.radius, nextY));
 
-    // Collision avec les structures solides
+    // Résolution multi-passes pour glisser parfaitement le long des angles de bâtiments
     structures.forEach(s => {
       if (s.type === 'bush') return; // On marche dans les buissons librement !
 
       const halfW = s.w / 2;
       const halfH = s.h / 2;
 
-      // Point le plus proche sur le rectangle limite
+      // Calculer le point le plus proche sur le rectangle de la building
       const closestX = Math.max(s.x - halfW, Math.min(nextX, s.x + halfW));
       const closestY = Math.max(s.y - halfH, Math.min(nextY, s.y + halfH));
 
       const dist = getDistance(nextX, nextY, closestX, closestY);
       if (dist < char.radius) {
-        // Collision détectée, repousser en dehors de l'obstacle
-        const diffX = nextX - closestX;
-        const diffY = nextY - closestY;
-        const len = Math.sqrt(diffX * diffX + diffY * diffY);
-        
-        if (len > 0) {
-          const overlap = char.radius - dist;
-          nextX += (diffX / len) * overlap;
-          nextY += (diffY / len) * overlap;
+        // Obtenir le vecteur de recul
+        let diffX = nextX - closestX;
+        let diffY = nextY - closestY;
+        let len = Math.sqrt(diffX * diffX + diffY * diffY);
+
+        if (len === 0) {
+          // Si le joueur est exactement au centre ou sur le point de contact, repousser vers l'extérieur le plus proche
+          const overlapLeft = nextX - (s.x - halfW);
+          const overlapRight = (s.x + halfW) - nextX;
+          const overlapTop = nextY - (s.y - halfH);
+          const overlapBottom = (s.y + halfH) - nextY;
+
+          const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+          if (minOverlap === overlapLeft) { diffX = -1; }
+          else if (minOverlap === overlapRight) { diffX = 1; }
+          else if (minOverlap === overlapTop) { diffY = -1; }
+          else { diffY = 1; }
+          len = 1;
+        }
+
+        const nx = diffX / len; // Normal de collision
+        const ny = diffY / len;
+
+        // Repousser le personnage hors de la structure
+        const overlap = char.radius - dist;
+        nextX += nx * overlap;
+        nextY += ny * overlap;
+
+        // Projection du vecteur mouvement (vx, vy) sur l'arête de tangente (glissement polygonal)
+        const dot = vx * nx + vy * ny;
+        if (dot < 0) {
+          nextX -= nx * dot * 0.95; // Permettre un glissement tangentiel presque parfait
+          nextY -= ny * dot * 0.95;
         }
       }
     });
@@ -2234,12 +2591,34 @@ export default function App() {
     ctx.fillStyle = groundColor;
     ctx.fillRect(0, 0, width, height);
 
+    // Sauvegarder pour le zoom camera du spectateur
+    ctx.save();
+
+    const zoom = spectatorMode ? freeCamZoom : 1.0;
+    if (zoom !== 1.0) {
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-width / 2, -height / 2);
+    }
+
     // Facteurs de décalage caméra
     const camX = cameraRef.current.x;
     const camY = cameraRef.current.y;
 
     const toScreenX = (wx: number) => wx - camX + width / 2;
     const toScreenY = (wy: number) => wy - camY + height / 2;
+
+    // Calculer le Frustum (champ de vision caméra tenant compte du zoom)
+    const viewW = width / zoom;
+    const viewH = height / zoom;
+    const visibleMinX = camX - viewW / 2 - 130;
+    const visibleMaxX = camX + viewW / 2 + 130;
+    const visibleMinY = camY - viewH / 2 - 130;
+    const visibleMaxY = camY + viewH / 2 + 130;
+
+    const isOutsideFrustum = (wx: number, wy: number, radius: number = 80) => {
+      return wx + radius < visibleMinX || wx - radius > visibleMaxX || wy + radius < visibleMinY || wy - radius > visibleMaxY;
+    };
 
     // Rendre les textures procédurales IA interactives relatives de la caméra
     if (currentArena === 'ai_custom' && aiCustomThemeRef.current) {
@@ -2372,10 +2751,11 @@ export default function App() {
     // --- RENDRE LES TUILES ENVIRONNEMENTALES PROCÉDURALES ---
     const envTiles = environmentalTilesRef.current;
     envTiles.forEach(tile => {
+      // Optimisation RAM : Frustum Culling dynamique ultra rapide
+      if (isOutsideFrustum(tile.x, tile.y, tile.radius)) return;
+
       const tx = toScreenX(tile.x);
       const ty = toScreenY(tile.y);
-      // Skip if offscreen
-      if (tx < -tile.radius || tx > width + tile.radius || ty < -tile.radius || ty > height + tile.radius) return;
 
       if (tile.type === 'mud') {
         ctx.save();
@@ -2567,13 +2947,14 @@ export default function App() {
     
     // Rendre d'abord les structures et buissons
     structures.forEach(s => {
+      // Optimisation RAM : Frustum Culling dynamique standardisé
+      if (isOutsideFrustum(s.x, s.y, Math.max(s.w, s.h))) return;
+
       const halfW = s.w / 2;
       const halfH = s.h / 2;
 
-      // Optimisation : Ne pas dessiner si hors écran
       const sx = toScreenX(s.x);
       const sy = toScreenY(s.y);
-      if (sx < -s.w || sx > width + s.w || sy < -s.h || sy > height + s.h) return;
 
       if (s.type === 'bush') {
         // Buisson translucide
@@ -2829,12 +3210,13 @@ export default function App() {
     // --- RENDRE LES ZONES DE POISON CHIMIQUES ---
     poisonZonesRef.current.forEach(zone => {
       if (!zone.active) return;
+      
+      // Optimisation RAM : Frustum Culling dynamique
+      if (isOutsideFrustum(zone.x, zone.y, zone.radius)) return;
+
       const zx = toScreenX(zone.x);
       const zy = toScreenY(zone.y);
       const zr = zone.radius;
-
-      // Ignorer si hors de l'écran de beaucoup
-      if (zx < -zr || zx > width + zr || zy < -zr || zy > height + zr) return;
 
       ctx.save();
       if (zone.isWarning) {
@@ -2888,9 +3270,11 @@ export default function App() {
     // --- RENDRE LE BUTIN AU SOL (LOOT ITEMS) ---
     const lootItems = lootItemsRef.current;
     lootItems.forEach(item => {
+      // Optimisation RAM : Frustum Culling dynamique
+      if (isOutsideFrustum(item.x, item.y, item.radius + 35)) return;
+
       const ix = toScreenX(item.x);
       const iy = toScreenY(item.y);
-      if (ix < -40 || ix > width + 40 || iy < -40 || iy > height + 40) return;
 
       // Lueur selon la rareté
       let glowColor = '#64748b';
@@ -2936,6 +3320,9 @@ export default function App() {
 
     // --- RENDRE LES LARGAGES DE RAVITAILLEMENT STRATÉGIQUES ---
     supplyDropsRef.current.forEach(drop => {
+      // Optimisation RAM : Frustum Culling dynamique
+      if (isOutsideFrustum(drop.x, drop.y, drop.radius + 150)) return;
+
       const dx = toScreenX(drop.x);
       const dy = toScreenY(drop.y);
 
@@ -3056,6 +3443,9 @@ export default function App() {
     // --- RENDRE LES PARTICULES ---
     const particles = particlesRef.current;
     particles.forEach(p => {
+      // Optimisation RAM : Frustum Culling dynamique
+      if (isOutsideFrustum(p.x, p.y, p.size + 15)) return;
+
       ctx.save();
       ctx.globalAlpha = p.life;
       
@@ -3100,9 +3490,11 @@ export default function App() {
     characters.forEach(char => {
       if (!char.alive) return;
 
+      // Optimisation RAM : Frustum Culling dynamique
+      if (isOutsideFrustum(char.x, char.y, char.radius + 80)) return;
+
       const cx = toScreenX(char.x);
       const cy = toScreenY(char.y);
-      if (cx < -50 || cx > width + 50 || cy < -50 || cy > height + 50) return;
 
       // Est-ce caché dans un buisson pour le rendu visuel ?
       const inBush = structures.some(s => s.type === 'bush' && getDistance(s.x, s.y, char.x, char.y) < s.w / 2);
@@ -3276,6 +3668,9 @@ export default function App() {
     // --- RENDRE LES PROJECTILES (TRAIT DE LUMIÈRE) ---
     const projectiles = projectilesRef.current;
     projectiles.forEach(proj => {
+      // Optimisation RAM : Frustum Culling dynamique
+      if (isOutsideFrustum(proj.x, proj.y, proj.radius + 40)) return;
+
       ctx.strokeStyle = proj.color;
       ctx.lineWidth = proj.radius;
       ctx.beginPath();
@@ -3326,6 +3721,51 @@ export default function App() {
     ctx.beginPath();
     ctx.arc(sx, sy, sRadiusScreen + 7, 0, Math.PI * 2);
     ctx.stroke();
+
+    // --- RENDRE LES EFFETS CLIMATIQUES VISUELS ET AMBIANCES REELLES ---
+    if (weatherEvent !== 'none') {
+      ctx.save();
+      if (weatherEvent === 'acid_rain') {
+        // Pluie verte acide tombant délicatement en diagonale
+        ctx.strokeStyle = 'rgba(34, 197, 94, 0.4)';
+        ctx.lineWidth = 1.8;
+        const rainCount = 45;
+        for (let i = 0; i < rainCount; i++) {
+          const rx = camX + (Math.sin(i * 139) * (viewW * 0.7));
+          const ry = camY + (Math.cos(i * 97) * (viewH * 0.7));
+          const sxLoc = toScreenX(rx);
+          const syLoc = toScreenY(ry);
+          ctx.beginPath();
+          ctx.moveTo(sxLoc, syLoc);
+          ctx.lineTo(sxLoc - 12, syLoc + 24);
+          ctx.stroke();
+        }
+      } 
+      
+      else if (weatherEvent === 'sandstorm') {
+        // Tempête ocre desertique avec vents de sable horizontaux
+        ctx.fillStyle = 'rgba(230, 160, 80, 0.16)';
+        ctx.fillRect(toScreenX(camX - viewW / 2), toScreenY(camY - viewH / 2), viewW, viewH);
+
+        ctx.strokeStyle = 'rgba(217, 119, 6, 0.45)';
+        ctx.lineWidth = 1.2;
+        const windLinesCount = 35;
+        for (let i = 0; i < windLinesCount; i++) {
+          const wx = camX + (Math.sin(i * 57) * (viewW * 0.7)) + ((Date.now() * 0.35) % 200) - 100;
+          const wy = camY + (Math.cos(i * 81) * (viewH * 0.7));
+          const sxLoc = toScreenX(wx);
+          const syLoc = toScreenY(wy);
+          ctx.beginPath();
+          ctx.moveTo(sxLoc, syLoc);
+          ctx.lineTo(sxLoc + 45, syLoc + 2);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    // Restaurer le zoom d'arène pour que le HUD / Minimap soit à l'échelle 1:1 de l'écran stable
+    ctx.restore();
 
     // --- DESSINER LA MINI-CARTE (MINIMAP) INDESTRUCTIBLE ET EXPLICITE ---
     const miniSize = 130;
@@ -3477,7 +3917,12 @@ export default function App() {
 
   // --- LOGIQUE MULTI-TOUCH ET JOYSTICKS TACTILES SANS COUTURES ---
   const handleLeftTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    const touch = e.touches[0];
+    if (e.cancelable) e.preventDefault();
+    const touch = e.changedTouches[0] || e.touches[0];
+    if (!touch) return;
+
+    leftTouchIdRef.current = touch.identifier;
+
     const rect = e.currentTarget.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
@@ -3485,20 +3930,47 @@ export default function App() {
   };
 
   const handleLeftTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    const touch = e.touches[0];
+    if (e.cancelable) e.preventDefault();
+    if (leftTouchIdRef.current === null) return;
+
+    let touch: Touch | null = null;
+    for (let i = 0; i < e.touches.length; i++) {
+      if (e.touches[i].identifier === leftTouchIdRef.current) {
+        touch = e.touches[i];
+        break;
+      }
+    }
+    if (!touch) return;
+
     const rect = e.currentTarget.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
     updateLeftJoystick(touch.clientX - centerX, touch.clientY - centerY);
   };
 
-  const handleLeftTouchEnd = () => {
-    setLeftKnobPos({ x: 0, y: 0 });
-    touchMoveVectorRef.current = { x: 0, y: 0 };
+  const handleLeftTouchEnd = (e?: React.TouchEvent<HTMLDivElement>) => {
+    if (e && e.cancelable) e.preventDefault();
+    let shouldReset = false;
+    if (!e) {
+      shouldReset = true;
+    } else {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === leftTouchIdRef.current) {
+          shouldReset = true;
+          break;
+        }
+      }
+    }
+
+    if (shouldReset) {
+      leftTouchIdRef.current = null;
+      setLeftKnobPos({ x: 0, y: 0 });
+      touchMoveVectorRef.current = { x: 0, y: 0 };
+    }
   };
 
   const updateLeftJoystick = (dx: number, dy: number) => {
-    const maxRadius = 45; // amplitude max en px
+    const maxRadius = 60; // amplitude max augmentée pour match la nouvelle taille
     const dist = Math.sqrt(dx * dx + dy * dy);
     let finalX = dx;
     let finalY = dy;
@@ -3512,7 +3984,12 @@ export default function App() {
   };
 
   const handleRightTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    const touch = e.touches[0];
+    if (e.cancelable) e.preventDefault();
+    const touch = e.changedTouches[0] || e.touches[0];
+    if (!touch) return;
+
+    rightTouchIdRef.current = touch.identifier;
+
     const rect = e.currentTarget.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
@@ -3520,21 +3997,48 @@ export default function App() {
   };
 
   const handleRightTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    const touch = e.touches[0];
+    if (e.cancelable) e.preventDefault();
+    if (rightTouchIdRef.current === null) return;
+
+    let touch: Touch | null = null;
+    for (let i = 0; i < e.touches.length; i++) {
+      if (e.touches[i].identifier === rightTouchIdRef.current) {
+        touch = e.touches[i];
+        break;
+      }
+    }
+    if (!touch) return;
+
     const rect = e.currentTarget.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
     updateRightJoystick(touch.clientX - centerX, touch.clientY - centerY);
   };
 
-  const handleRightTouchEnd = () => {
-    setRightKnobPos({ x: 0, y: 0 });
-    touchAimVectorRef.current = { x: 0, y: 0 };
-    isTouchShootingRef.current = false;
+  const handleRightTouchEnd = (e?: React.TouchEvent<HTMLDivElement>) => {
+    if (e && e.cancelable) e.preventDefault();
+    let shouldReset = false;
+    if (!e) {
+      shouldReset = true;
+    } else {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === rightTouchIdRef.current) {
+          shouldReset = true;
+          break;
+        }
+      }
+    }
+
+    if (shouldReset) {
+      rightTouchIdRef.current = null;
+      setRightKnobPos({ x: 0, y: 0 });
+      touchAimVectorRef.current = { x: 0, y: 0 };
+      isTouchShootingRef.current = false;
+    }
   };
 
   const updateRightJoystick = (dx: number, dy: number) => {
-    const maxRadius = 45;
+    const maxRadius = 60;
     const dist = Math.sqrt(dx * dx + dy * dy);
     let finalX = dx;
     let finalY = dy;
@@ -3630,6 +4134,7 @@ export default function App() {
               spectatingName={spectatingName}
               equippedEmote={stats.equippedEmote}
               onTriggerEmote={handleTriggerEmote}
+              touchLayout={touchLayout}
             />
           )}
 
@@ -3639,7 +4144,12 @@ export default function App() {
               
               {/* JOYSTICK GAUCHE : Déplacements libres à 360° */}
               <div 
-                className="absolute bottom-8 left-8 w-28 h-28 bg-slate-900/60 border border-slate-700/50 backdrop-blur-md rounded-full flex items-center justify-center pointer-events-auto touch-none shadow-2xl"
+                className="absolute w-36 h-36 bg-slate-900/60 border border-slate-700/50 backdrop-blur-md rounded-full flex items-center justify-center pointer-events-auto touch-none shadow-2xl"
+                style={{
+                  left: `${touchLayout.leftJoystick.x}%`,
+                  top: `${touchLayout.leftJoystick.y}%`,
+                  transform: 'translate(-50%, -50%)',
+                }}
                 onTouchStart={handleLeftTouchStart}
                 onTouchMove={handleLeftTouchMove}
                 onTouchEnd={handleLeftTouchEnd}
@@ -3662,22 +4172,29 @@ export default function App() {
               >
                 {/* Centre / Knob */}
                 <div 
-                  className="w-10 h-10 bg-amber-500 rounded-full shadow-[0_0_15px_rgba(245,158,11,0.6)] cursor-grab active:cursor-grabbing border-2 border-slate-950"
+                  className="w-14 h-14 bg-amber-500 rounded-full shadow-[0_0_20px_rgba(245,158,11,0.75)] cursor-grab active:cursor-grabbing border-2 border-slate-950 flex items-center justify-center"
                   style={{
                     transform: `translate(${leftKnobPos.x}px, ${leftKnobPos.y}px)`,
                   }}
-                />
+                >
+                  <span className="text-xs text-slate-950 font-black">⚙️</span>
+                </div>
                 
                 {/* Repères cardinaux discrets */}
-                <span className="absolute top-2 text-[8px] font-mono text-slate-500 font-bold opacity-60">Z</span>
-                <span className="absolute bottom-2 text-[8px] font-mono text-slate-500 font-bold opacity-60">S</span>
-                <span className="absolute left-2 text-[8px] font-mono text-slate-500 font-bold opacity-60">Q</span>
-                <span className="absolute right-2 text-[8px] font-mono text-slate-500 font-bold opacity-60">D</span>
+                <span className="absolute top-3 text-[10px] font-mono text-slate-400 font-bold opacity-60">Z</span>
+                <span className="absolute bottom-3 text-[10px] font-mono text-slate-400 font-bold opacity-60">S</span>
+                <span className="absolute left-3 text-[10px] font-mono text-slate-400 font-bold opacity-60">Q</span>
+                <span className="absolute right-3 text-[10px] font-mono text-slate-400 font-bold opacity-60">D</span>
               </div>
 
               {/* JOYSTICK DROIT : Visée et Tir Auto */}
               <div 
-                className="absolute bottom-8 right-8 w-28 h-28 bg-slate-900/60 border border-slate-700/50 backdrop-blur-md rounded-full flex items-center justify-center pointer-events-auto touch-none shadow-2xl"
+                className="absolute w-36 h-36 bg-slate-900/60 border border-slate-700/50 backdrop-blur-md rounded-full flex items-center justify-center pointer-events-auto touch-none shadow-2xl"
+                style={{
+                  left: `${touchLayout.rightJoystick.x}%`,
+                  top: `${touchLayout.rightJoystick.y}%`,
+                  transform: 'translate(-50%, -50%)',
+                }}
                 onTouchStart={handleRightTouchStart}
                 onTouchMove={handleRightTouchMove}
                 onTouchEnd={handleRightTouchEnd}
@@ -3700,12 +4217,12 @@ export default function App() {
               >
                 {/* Centre / Knob rouge feu */}
                 <div 
-                  className="w-10 h-10 bg-red-500 rounded-full shadow-[0_0_15px_rgba(239,68,68,0.6)] cursor-grab active:cursor-grabbing border-2 border-slate-950 flex items-center justify-center"
+                  className="w-14 h-14 bg-red-500 rounded-full shadow-[0_0_20px_rgba(239,68,68,0.75)] cursor-grab active:cursor-grabbing border-2 border-slate-950 flex items-center justify-center"
                   style={{
                     transform: `translate(${rightKnobPos.x}px, ${rightKnobPos.y}px)`,
                   }}
                 >
-                  <span className="text-[10px] text-white">🎯</span>
+                  <span className="text-base text-white">🎯</span>
                 </div>
               </div>
 
@@ -3713,13 +4230,19 @@ export default function App() {
               <button
                 onTouchStart={(e) => {
                   e.stopPropagation();
+                  if (e.cancelable) e.preventDefault();
                   triggerPlayerDash();
                 }}
                 onMouseDown={(e) => {
                   e.stopPropagation();
                   triggerPlayerDash();
                 }}
-                className="absolute bottom-36 right-8 w-14 h-14 bg-gradient-to-r from-amber-500 to-amber-600 rounded-full flex items-center justify-center text-xl shadow-[0_0_15px_rgba(245,158,11,0.4)] border border-amber-300 font-black text-slate-950 active:scale-95 pointer-events-auto hover:brightness-110 cursor-pointer select-none transition-all"
+                className="absolute w-16 h-16 bg-gradient-to-r from-amber-500 to-amber-600 rounded-full flex items-center justify-center text-2xl shadow-[0_0_20px_rgba(245,158,11,0.55)] border border-amber-300 font-black text-slate-950 active:scale-95 pointer-events-auto hover:brightness-110 cursor-pointer select-none transition-all"
+                style={{
+                  left: `${touchLayout.dashButton.x}%`,
+                  top: `${touchLayout.dashButton.y}%`,
+                  transform: 'translate(-50%, -50%)',
+                }}
                 title="Dash instantané"
               >
                 ⚡
@@ -3729,6 +4252,29 @@ export default function App() {
           )}
 
           {/* BANNÈRE D'ÉVÉNEMENTS ALÉATOIRES TACTIQUES */}
+          {weatherEvent !== 'none' && (
+            <div className="absolute top-[4.5rem] left-1/2 -translate-x-1/2 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-full px-5 py-1.5 flex items-center gap-3 shadow-[0_10px_25px_rgba(0,0,0,0.65)] z-40 select-none pointer-events-none transition-all duration-300 animate-pulse">
+              <div className={`w-2.5 h-2.5 rounded-full animate-ping absolute ${
+                weatherEvent === 'magma_comets' ? 'bg-rose-500' :
+                weatherEvent === 'acid_rain' ? 'bg-green-500' :
+                'bg-amber-500'
+              }`} />
+              <div className={`w-2.5 h-2.5 rounded-full relative ${
+                weatherEvent === 'magma_comets' ? 'bg-rose-500 shadow-[0_0_8px_#ef4444]' :
+                weatherEvent === 'acid_rain' ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' :
+                'bg-amber-500 shadow-[0_0_8px_#f59e0b]'
+              }`} />
+              <span className="text-[11px] font-black font-sans tracking-widest text-slate-200 uppercase">
+                {weatherEvent === 'magma_comets' && '☄️ AVERSE DE COMÈTES MAGMA'}
+                {weatherEvent === 'acid_rain' && '🌧️ PLUIE ACIDE CORROSIVE'}
+                {weatherEvent === 'sandstorm' && '🌪️ TEMPÊTE DE SABLE DESERTIQUE'}
+              </span>
+              <span className="text-[11px] font-mono font-black text-slate-100 bg-slate-800/90 py-0.5 px-2 rounded-md">
+                {weatherDuration}s
+              </span>
+            </div>
+          )}
+
           {centerNotification && Date.now() < centerNotification.expiresAt && (
             <div className="absolute top-28 left-1/2 -translate-x-1/2 bg-slate-950/95 border-2 border-amber-500 rounded-2xl px-6 py-3 shadow-[0_0_25px_rgba(245,158,11,0.35)] text-center z-50 max-w-md pointer-events-none transition-all duration-300 transform scale-100">
               <span className="text-xs font-black font-sans text-amber-400 uppercase tracking-widest block">
@@ -3771,6 +4317,25 @@ export default function App() {
           />
         </div>
       )}
+
+      {/* PORTRAIT OVERLAY : CONSEIL DE ROTATION POUR SMARTPHONES */}
+      <div className="portrait:flex hidden md:portrait:hidden fixed inset-0 bg-slate-950/95 z-50 flex-col items-center justify-center p-6 text-center animate-fade-in pointer-events-auto">
+        <span className="text-5xl animate-bounce mb-4">🔄📱</span>
+        <h3 className="text-xl font-bold text-amber-500 font-sans uppercase">Rotation Recommandée</h3>
+        <p className="text-xs text-slate-400 mt-2 max-w-xs font-sans leading-relaxed">
+          Pour piloter vos joysticks tactiles à 360° avec précision et voir venir vos adversaires, veuillez incliner votre smartphone à l'horizontale.
+        </p>
+        <button 
+          onClick={(e) => {
+            const target = e.currentTarget.parentElement;
+            if (target) target.style.display = 'none';
+          }}
+          className="mt-6 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 px-5 py-2.5 rounded-xl text-xs font-bold font-sans active:scale-95 transition-all cursor-pointer"
+        >
+          Jouer en Écran Vertical
+        </button>
+      </div>
+
     </div>
   );
 }
