@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { PlayMode, Character, LootItem, Projectile, GameParticle, StormZone, PlayerStats, ArenaType, EnvironmentalTile, AICustomTheme, AIEnvironmentEvent, SupplyDrop, PoisonZone, WeaponType, Difficulty } from './types';
+import { PlayMode, Character, LootItem, Projectile, GameParticle, StormZone, PlayerStats, ArenaType, EnvironmentalTile, AICustomTheme, AIEnvironmentEvent, SupplyDrop, PoisonZone, WeaponType, Difficulty, Chest } from './types';
 import { MAP_SIZE, BOT_NAMES, getDistance, generateRandomLoot, generateWeapon, Building, generateProceduralArena, ARENA_THEMES, checkCircleCollision, checkPointInRect } from './utils';
 import { sounds } from './audio';
 import MainMenu from './components/MainMenu';
@@ -133,6 +133,7 @@ export default function App() {
   // Core Game Entities kept in useRef to prevent infinite re-renders during 60 FPS simulations
   const charactersRef = useRef<Character[]>([]);
   const lootItemsRef = useRef<LootItem[]>([]);
+  const chestsRef = useRef<Chest[]>([]);
   const projectilesRef = useRef<Projectile[]>([]);
   const particlesRef = useRef<GameParticle[]>([]);
   const structuresRef = useRef<Building[]>([]);
@@ -221,6 +222,10 @@ export default function App() {
     }
   };
 
+  const [isOpeningChest, setIsOpeningChest] = useState<boolean>(false);
+  const [chestOpenProgress, setChestOpenProgress] = useState<number>(0);
+  const openingChestIdRef = useRef<string | null>(null);
+  
   // HUD mirroring refs to sync 60 FPS numbers with React state selectively
   const playerRef = useRef<Character | null>(null);
   const mateRef = useRef<Character | null>(null);
@@ -470,6 +475,11 @@ export default function App() {
     matchKillsByTypeRef.current = { pistol: 0, shotgun: 0, rifle: 0, sniper: 0, rocket: 0 };
     matchDistanceTraveledRef.current = 0;
     matchHealsUsedRef.current = 0;
+    
+    // vibe: Réinitialiser états coffres
+    openingChestIdRef.current = null;
+    setIsOpeningChest(false);
+    setChestOpenProgress(0);
 
     setWeatherEvent('none');
     setWeatherDuration(0);
@@ -566,6 +576,27 @@ export default function App() {
       }
     }
     lootItemsRef.current = lootList;
+    
+    // vibe: Générer coffres au trésor épiques/légendaires
+    const chestList: Chest[] = [];
+    const chestCount = 10;
+    for (let i = 0; i < chestCount; i++) {
+      const cx = 150 + Math.random() * (MAP_SIZE - 300);
+      const cy = 150 + Math.random() * (MAP_SIZE - 300);
+      const hasStructure = structuresRef.current.some(s => s.type !== 'bush' && getDistance(s.x, s.y, cx, cy) < s.w / 2 + 60);
+      if (!hasStructure) {
+        chestList.push({
+          id: `chest-${i}-${Date.now()}`,
+          x: cx,
+          y: cy,
+          radius: 25,
+          isOpened: false,
+          openProgress: 0,
+          rarity: Math.random() > 0.85 ? 'legendary' : Math.random() > 0.5 ? 'epic' : 'rare'
+        });
+      }
+    }
+    chestsRef.current = chestList;
 
     // Définir équipes et joueurs
     const characters: Character[] = [];
@@ -2267,6 +2298,68 @@ export default function App() {
     if (livingTeams.length <= 1 && gameState === 'playing') {
       handleMatchComplete();
     }
+
+    // vibe: Gestion de l'interaction avec les coffres au trésor
+    if (player && player.alive && !player.knocked) {
+      const isInteracting = keysPressedRef.current['f'];
+      let foundChestInRange: Chest | null = null;
+      
+      chestsRef.current.forEach(chest => {
+        if (chest.isOpened) return;
+        const dist = getDistance(player.x, player.y, chest.x, chest.y);
+        if (dist < chest.radius + 50) {
+          foundChestInRange = chest;
+        }
+      });
+
+      if (foundChestInRange && isInteracting) {
+        if (openingChestIdRef.current !== foundChestInRange.id) {
+          openingChestIdRef.current = foundChestInRange.id;
+          setIsOpeningChest(true);
+          setChestOpenProgress(0);
+        }
+        
+        // Incrémenter le progrès (~3 secondes)
+        const newProgress = Math.min(1, foundChestInRange.openProgress + 0.0055);
+        foundChestInRange.openProgress = newProgress;
+        setChestOpenProgress(newProgress);
+
+        if (newProgress >= 1) {
+          foundChestInRange.isOpened = true;
+          openingChestIdRef.current = null;
+          setIsOpeningChest(false);
+          setChestOpenProgress(0);
+          
+          // vibe: Faire spawn du butin de haut niveau
+          const lootCount = foundChestInRange.rarity === 'legendary' ? 6 : foundChestInRange.rarity === 'epic' ? 4 : 3;
+          for (let k = 0; k < lootCount; k++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 35 + Math.random() * 45;
+            const lx = foundChestInRange.x + Math.cos(angle) * dist;
+            const ly = foundChestInRange.y + Math.sin(angle) * dist;
+            
+            // Forcer une rareté élevée
+            let forcedRarity: 'rare' | 'epic' | 'legendary' = foundChestInRange.rarity;
+            if (Math.random() > 0.7 && forcedRarity !== 'legendary') forcedRarity = 'legendary';
+            
+            lootItemsRef.current.push({
+              ...generateRandomLoot(lx, ly, `loot-chest-${foundChestInRange.id}-${k}`),
+              rarity: forcedRarity
+            });
+          }
+          sounds.playLevelUp();
+          spawnParticlesCircle(foundChestInRange.x, foundChestInRange.y, '#f59e0b', 25);
+        }
+      } else {
+        if (openingChestIdRef.current) {
+          const currentChest = chestsRef.current.find(c => c.id === openingChestIdRef.current);
+          if (currentChest) currentChest.openProgress = 0;
+          openingChestIdRef.current = null;
+          setIsOpeningChest(false);
+          setChestOpenProgress(0);
+        }
+      }
+    }
   };
 
   // Fin de match triomphale ou spectateur
@@ -3558,6 +3651,76 @@ export default function App() {
       ctx.fillText(shortLabel, ix, iy);
     });
 
+    // vibe: Rendu des COFFRES AU TRÉSOR ÉPIQUES/LÉGENDAIRES
+    chestsRef.current.forEach(chest => {
+      if (isOutsideFrustum(chest.x, chest.y, chest.radius + 100)) return;
+      const screenX = toScreenX(chest.x);
+      const screenY = toScreenY(chest.y);
+      
+      let chestColor = '#3b82f6'; // rare
+      if (chest.rarity === 'epic') chestColor = '#a855f7';
+      if (chest.rarity === 'legendary') chestColor = '#f59e0b';
+
+      if (!chest.isOpened) {
+        const pulseFactor = 1 + Math.sin(Date.now() * 0.003) * 0.08;
+        
+        ctx.save();
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = chestColor;
+        
+        // Corps principal du coffre
+        ctx.fillStyle = '#1e1e2e';
+        ctx.strokeStyle = chestColor;
+        ctx.lineWidth = 3;
+        
+        const cw = 34 * pulseFactor;
+        const ch = 24 * pulseFactor;
+        ctx.beginPath();
+        ctx.roundRect(screenX - cw/2, screenY - ch/2, cw, ch, 4);
+        ctx.fill();
+        ctx.stroke();
+        
+        // Couvercle / Détails stylisés
+        ctx.fillStyle = chestColor;
+        ctx.fillRect(screenX - cw/2 + 4, screenY - ch/2 + 4, cw - 8, 3);
+        ctx.fillRect(screenX - 3, screenY - 4, 6, 8); // Serrure
+        
+        // Aura vibrante
+        ctx.globalAlpha = 0.2;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, (chest.radius + 15) * pulseFactor, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        
+        // Bulle d'interaction si proche
+        const p = playerRef.current;
+        if (p && p.alive && getDistance(p.x, p.y, chest.x, chest.y) < chest.radius + 60) {
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('MAINTENIR [F] POUR OUVRIR', screenX, screenY - 32);
+          ctx.font = '9px monospace';
+          ctx.fillStyle = chestColor;
+          ctx.fillText(chest.rarity.toUpperCase(), screenX, screenY - 44);
+        }
+      } else {
+        // Coffre vide et ouvert
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(screenX - 17, screenY - 2, 34, 14, 2);
+        ctx.stroke();
+        ctx.beginPath(); // Couvercle ouvert vers le haut
+        ctx.moveTo(screenX - 17, screenY - 2);
+        ctx.lineTo(screenX - 22, screenY - 15);
+        ctx.lineTo(screenX + 12, screenY - 15);
+        ctx.lineTo(screenX + 17, screenY - 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+      }
+    });
+
     // --- RENDRE LES LARGAGES DE RAVITAILLEMENT STRATÉGIQUES ---
     supplyDropsRef.current.forEach(drop => {
       // Optimisation RAM : Frustum Culling dynamique
@@ -4469,6 +4632,20 @@ export default function App() {
           )}
 
           {/* Les Overlays du HUD */}
+          {playerRef.current && isOpeningChest && (
+            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-[100px] flex flex-col items-center gap-3 z-50 pointer-events-none">
+              <div className="bg-slate-950/80 border border-amber-500/50 backdrop-blur-md px-6 py-3 rounded-2xl flex flex-col items-center gap-2 shadow-2xl">
+                <span className="text-amber-400 text-xs font-mono font-bold tracking-[0.2em] uppercase">Ouverture du Coffre...</span>
+                <div className="w-48 h-3 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                  <div 
+                    className="h-full bg-gradient-to-r from-amber-600 to-amber-400 transition-all duration-75"
+                    style={{ width: `${chestOpenProgress * 100}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {playerRef.current && !isMapEnlarged && (
             <GameHUD
               player={playerRef.current}

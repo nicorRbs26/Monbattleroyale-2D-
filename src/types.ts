@@ -203,6 +203,16 @@ export interface MatchHistory {
   weaponOfChoice: string;
 }
 
+export interface Chest {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  isOpened: boolean;
+  openProgress: number; // 0 to 1
+  rarity: 'rare' | 'epic' | 'legendary';
+}
+
 export interface PlayerStats {
   gamesPlayed: number;
   wins: number;
