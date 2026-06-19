@@ -614,15 +614,15 @@ export default function App() {
     let botShieldChance = 0.5;
 
     if (selectedDifficulty === 'easy') {
-      playerMaxHealth = 150;
-      playerMaxShield = 75;
-      botSpeedBase = 3.6;
-      botShieldChance = 0.2;
+      playerMaxHealth = 200;
+      playerMaxShield = 100;
+      botSpeedBase = 3.2;
+      botShieldChance = 0.1;
     } else if (selectedDifficulty === 'hard') {
       playerMaxHealth = 75;
       playerMaxShield = 0;
-      botSpeedBase = 4.4;
-      botShieldChance = 0.7;
+      botSpeedBase = 4.6;
+      botShieldChance = 0.8;
     }
 
     const playerObj: Character = {
@@ -1927,7 +1927,9 @@ export default function App() {
 
       // --- PRISE DE DÉCISION IA TOUTES LES 1/3s POUR SAUVER LA CPU ---
       const now = Date.now();
-      if (now - char.lastDecisionTime > 300) {
+      // vibe: Intervalle de décision IA réduit en facile pour le rendre moins réactif
+      const currentBotDecisionInterval = selectedDifficulty === 'easy' ? 800 : selectedDifficulty === 'hard' ? 150 : 300;
+      if (now - char.lastDecisionTime > currentBotDecisionInterval) {
         char.lastDecisionTime = now;
         
         const inStorm = dS > storm.radius;
@@ -2266,7 +2268,16 @@ export default function App() {
         
         if (checkCircleCollision(proj.x, proj.y, proj.radius, char.x, char.y, char.radius)) {
           hitChar = true;
-          damageCharacter(char, proj.damage, proj.ownerId);
+          
+          // vibe: Appliquer multiplicateur de dégâts bots selon la difficulté
+          let finalDamage = proj.damage;
+          const attacker = characters.find(a => a.id === proj.ownerId);
+          if (attacker && attacker.isBot && char.isPlayer) {
+            if (selectedDifficulty === 'easy') finalDamage *= 0.6;
+            else if (selectedDifficulty === 'hard') finalDamage *= 1.4;
+          }
+          
+          damageCharacter(char, finalDamage, proj.ownerId);
           break;
         }
       }
@@ -2347,7 +2358,7 @@ export default function App() {
               rarity: forcedRarity
             });
           }
-          sounds.playLevelUp();
+          sounds.playHeal();
           spawnParticlesCircle(foundChestInRange.x, foundChestInRange.y, '#f59e0b', 25);
         }
       } else {
@@ -2735,7 +2746,15 @@ export default function App() {
     } else {
       // Armes normales : 1 balle droite avec légère dispersion
       const spreadVal = activeW.spread;
-      const finalAngle = char.angle + (Math.random() - 0.5) * spreadVal;
+      
+      // vibe: Ajouter de l'imprécision aux bots selon la difficulté
+      let aiExtraSpread = 0;
+      if (char.isBot) {
+        if (selectedDifficulty === 'easy') aiExtraSpread = 0.25;
+        else if (selectedDifficulty === 'normal') aiExtraSpread = 0.1;
+      }
+      
+      const finalAngle = char.angle + (Math.random() - 0.5) * (spreadVal + aiExtraSpread);
 
       projectilesRef.current.push({
         id: idSeed,
@@ -3893,8 +3912,60 @@ export default function App() {
     characters.forEach(char => {
       if (!char.alive) return;
 
-      // Optimisation RAM : Frustum Culling dynamique
-      if (isOutsideFrustum(char.x, char.y, char.radius + 80)) return;
+      // vibe: Off-screen character tracking (indicators for teammates)
+      if (isOutsideFrustum(char.x, char.y, char.radius + 80)) {
+        if (char.teamId === 'team-player' || (spectatorMode && char.alive)) {
+          // Calculer la direction vers le personnage hors écran
+          const angleToChar = Math.atan2(char.y - camY, char.x - camX);
+          
+          // Trouver le bord de l'écran le plus proche
+          const padding = 40;
+          let edgeX = width / 2 + Math.cos(angleToChar) * (width / 2 - padding);
+          let edgeY = height / 2 + Math.sin(angleToChar) * (height / 2 - padding);
+          
+          // Clamp aux bords exacts
+          const slope = (char.y - camY) / (char.x - camX || 0.001);
+          if (Math.abs(Math.cos(angleToChar)) * height > Math.abs(Math.sin(angleToChar)) * width) {
+            // Côtés gauche/droite
+            edgeX = Math.cos(angleToChar) > 0 ? width - padding : padding;
+            edgeY = height / 2 + (edgeX - width / 2) * slope;
+          } else {
+            // Haut/bas
+            edgeY = Math.sin(angleToChar) > 0 ? height - padding : padding;
+            edgeX = width / 2 + (edgeY - height / 2) / (slope || 0.001);
+          }
+          
+          ctx.save();
+          const distToChar = Math.round(getDistance(char.x, char.y, camX, camY));
+          const indicatorColor = char.isPlayer ? '#fbbf24' : char.teamId === 'team-player' ? '#60a5fa' : '#f1f5f9';
+          
+          ctx.translate(edgeX, edgeY);
+          ctx.rotate(angleToChar);
+          
+          // Flèche
+          ctx.fillStyle = indicatorColor;
+          ctx.beginPath();
+          ctx.moveTo(10, 0);
+          ctx.lineTo(-8, -8);
+          ctx.lineTo(-8, 8);
+          ctx.closePath();
+          ctx.fill();
+          
+          // Bulle d'info
+          ctx.rotate(-angleToChar);
+          ctx.font = 'bold 9px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(`${char.name} (${distToChar}m)`, 0, 20);
+          
+          if (char.knocked) {
+            ctx.fillStyle = '#ef4444';
+            ctx.fillText('🚨 SOS', 0, 32);
+          }
+          
+          ctx.restore();
+        }
+        return;
+      }
 
       const cx = toScreenX(char.x);
       const cy = toScreenY(char.y);
@@ -3999,7 +4070,6 @@ export default function App() {
 
       // Yeux orientés vers l'angle de tir
       const eyeXOffset = 6;
-      const eyeYOffset = 5;
       ctx.fillStyle = '#ffffff';
 
       const eyeLeftX = cx + Math.cos(char.angle - 0.4) * eyeXOffset;
@@ -4039,6 +4109,27 @@ export default function App() {
         else if (char.hatStyle === 'wizard') hatEmoji = '🧙';
 
         ctx.fillText(hatEmoji, cx, cy - 9);
+      }
+
+      // vibe: Health/Shield bars above characters for better status tracking
+      const barW = 32;
+      const barH = 3.5;
+      const barY = cy - 35;
+      
+      // Fond barre
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
+      ctx.fillRect(cx - barW/2, barY, barW, barH);
+      
+      // Barre Vie
+      const healthW = (char.health / 100) * barW;
+      ctx.fillStyle = char.knocked ? '#dc2626' : (char.health < 30 ? '#ef4444' : '#22c55e');
+      ctx.fillRect(cx - barW/2, barY, healthW, barH);
+      
+      // Barre Bouclier (au-dessus si > 0)
+      if (char.shield > 0) {
+        const shieldW = (char.shield / 100) * barW;
+        ctx.fillStyle = '#3b82f6';
+        ctx.fillRect(cx - barW/2, barY - 4.5, shieldW, barH);
       }
 
       // Rendre pseudo au-dessus du joueur
