@@ -34,6 +34,7 @@ export default function App() {
   const [gameState, setGameState] = useState<'menu' | 'playing' | 'report'>('menu');
   const [playMode, setSelectedMode] = useState<PlayMode>('solo');
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>('normal');
+  const [isMapEnlarged, setIsMapEnlarged] = useState(false);
   const [selectedArena, setSelectedArena] = useState<ArenaType | 'random'>('random');
   const [currentArena, setCurrentArena] = useState<ArenaType>('military_forest');
   const [controlOption, setControlOption] = useState<'keyboard' | 'gamepad' | 'touch'>(() => {
@@ -283,6 +284,9 @@ export default function App() {
         } else if (key === 't') {
           // Exprimer émote équipée
           handleTriggerEmote();
+        } else if (key === 'm') {
+          // Toggle minimap agrandie 
+          setIsMapEnlarged(prev => !prev);
         }
       }
     };
@@ -3820,18 +3824,24 @@ export default function App() {
     ctx.restore();
 
     // --- DESSINER LA MINI-CARTE (MINIMAP) INDESTRUCTIBLE ET EXPLICITE ---
-    const miniSize = 130;
-    const miniX = width - miniSize - 20;
-    const miniY = height - miniSize - 20;
+    const miniSize = isMapEnlarged ? Math.min(width, height) * 0.75 : 130;
+    const miniX = isMapEnlarged ? (width - miniSize) / 2 : width - miniSize - 20;
+    const miniY = isMapEnlarged ? (height - miniSize) / 2 : height - miniSize - 20;
 
     // Permettre l'interaction cliquable sur le reste du HUD
     ctx.save();
     
+    // Si agrandie, fond plus sombre semi-opaque pour masquer le jeu en arrière plan partiel
+    if (isMapEnlarged) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(0, 0, width, height);
+    }
+    
     // Fond minimap
-    ctx.fillStyle = 'rgba(2, 6, 23, 0.9)';
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.95)';
     ctx.fillRect(miniX, miniY, miniSize, miniSize);
     ctx.strokeStyle = '#475569';
-    ctx.lineWidth = 2.0;
+    ctx.lineWidth = isMapEnlarged ? 4.0 : 2.0;
     ctx.strokeRect(miniX, miniY, miniSize, miniSize);
 
     const mapToMiniX = (wx: number) => miniX + (wx / MAP_SIZE) * miniSize;
@@ -3841,11 +3851,12 @@ export default function App() {
     structures.forEach(s => {
       if (s.type === 'structure') {
         ctx.fillStyle = '#334155';
+        const strDotSize = isMapEnlarged ? 8 : 4;
         ctx.fillRect(
-          miniX + (s.x / MAP_SIZE) * miniSize - 2,
-          miniY + (s.y / MAP_SIZE) * miniSize - 2,
-          4,
-          4
+          miniX + (s.x / MAP_SIZE) * miniSize - strDotSize/2,
+          miniY + (s.y / MAP_SIZE) * miniSize - strDotSize/2,
+          strDotSize,
+          strDotSize
         );
       }
     });
@@ -3857,7 +3868,7 @@ export default function App() {
 
     if (miniStormR > 0) {
       ctx.strokeStyle = '#3b82f6';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = isMapEnlarged ? 3 : 1;
       ctx.beginPath();
       ctx.arc(miniStormX, miniStormY, miniStormR, 0, Math.PI * 2);
       ctx.stroke();
@@ -3869,9 +3880,9 @@ export default function App() {
     const miniNextR = (storm.targetRadius / MAP_SIZE) * miniSize;
     
     if (miniNextR > 0) {
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([2, 2]);
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+      ctx.lineWidth = isMapEnlarged ? 2 : 1;
+      ctx.setLineDash([5, 5]);
       ctx.beginPath();
       ctx.arc(miniNextX, miniNextY, miniNextR, 0, Math.PI * 2);
       ctx.stroke();
@@ -3889,7 +3900,7 @@ export default function App() {
       ctx.save();
       ctx.fillStyle = zone.isWarning ? 'rgba(234, 179, 8, 0.28)' : 'rgba(34, 197, 94, 0.38)';
       ctx.strokeStyle = zone.isWarning ? '#fbbf24' : '#22c55e';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = isMapEnlarged ? 2 : 1;
       ctx.beginPath();
       ctx.arc(mx, my, mr, 0, Math.PI * 2);
       ctx.fill();
@@ -3906,11 +3917,12 @@ export default function App() {
       ctx.save();
       ctx.fillStyle = '#f59e0b'; // Or
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 0.5;
+      ctx.lineWidth = isMapEnlarged ? 1.0 : 0.5;
       
       // Dessiner un petit carré doré orné d'un liseré blanc clignotant
+      const dropSize = isMapEnlarged ? 12 : 6;
       ctx.beginPath();
-      ctx.rect(mx - 3, my - 3, 6, 6);
+      ctx.rect(mx - dropSize/2, my - dropSize/2, dropSize, dropSize);
       ctx.fill();
       ctx.stroke();
       ctx.restore();
@@ -3925,31 +3937,61 @@ export default function App() {
 
       if (char.isPlayer) {
         ctx.fillStyle = '#fbbf24'; // Jaune intense pour toi
+        const pSize = isMapEnlarged ? 7 : 3.5;
         ctx.beginPath();
-        ctx.arc(mx, my, 3.5, 0, Math.PI * 2);
+        ctx.arc(mx, my, pSize, 0, Math.PI * 2);
         ctx.fill();
         // Une petite pulsation
         ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(mx, my, 5, 0, Math.PI * 2);
+        ctx.arc(mx, my, pSize * 1.5, 0, Math.PI * 2);
         ctx.stroke();
+
+        // Si agrandie, dessiner une flèche de direction
+        if (isMapEnlarged) {
+          ctx.save();
+          ctx.translate(mx, my);
+          ctx.rotate(char.angle);
+          ctx.fillStyle = '#fbbf24';
+          ctx.beginPath();
+          ctx.moveTo(10, 0);
+          ctx.lineTo(-5, -6);
+          ctx.lineTo(-5, 6);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
       } else if (char.teamId === 'team-player') {
         ctx.fillStyle = '#60a5fa'; // Bleu pour coéquipier allié
+        const mSize = isMapEnlarged ? 5 : 2.5;
         ctx.beginPath();
-        ctx.arc(mx, my, 2.5, 0, Math.PI * 2);
+        ctx.arc(mx, my, mSize, 0, Math.PI * 2);
         ctx.fill();
       } else {
         ctx.fillStyle = '#ef4444'; // rouge discret pour les ennemis si proches
+        const eSize = isMapEnlarged ? 4 : 2;
         // Option : n'afficher que si proches ou toujours afficher pour simplifier la démo
         const distToPlayer = playerRef.current ? getDistance(char.x, char.y, playerRef.current.x, playerRef.current.y) : MAP_SIZE;
         if (distToPlayer < 650) {
           ctx.beginPath();
-          ctx.arc(mx, my, 2.0, 0, Math.PI * 2);
+          ctx.arc(mx, my, eSize, 0, Math.PI * 2);
           ctx.fill();
         }
       }
     });
+
+    // Label si agrandie
+    if (isMapEnlarged) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 20px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('CARTE TACTIQUE D\'ARÈNE', width / 2, miniY - 20);
+      
+      ctx.font = '12px monospace';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('Cliquez n\'importe où sur la carte pour fermer', width / 2, miniY + miniSize + 30);
+    }
 
     ctx.restore();
   };
@@ -4169,8 +4211,35 @@ export default function App() {
             className="w-full h-full block cursor-crosshair"
           />
 
+          {/* Calque interactif pour la Minimap */}
+          {gameState === 'playing' && (
+            <>
+              {/* Overlay invisible pour le petit format (en bas à droite) */}
+              {!isMapEnlarged && (
+                <div 
+                  onClick={() => setIsMapEnlarged(true)}
+                  className="absolute bottom-[20px] right-[20px] w-[130px] h-[130px] cursor-pointer z-30 group"
+                  title="Agrandir la carte tactique"
+                >
+                  <div className="absolute inset-0 border-2 border-transparent group-hover:border-amber-500/50 transition-all rounded" />
+                  <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 border border-slate-700 px-1 rounded text-[9px] text-amber-400 font-bold">
+                    [CLIC]
+                  </div>
+                </div>
+              )}
+              
+              {/* Overlay pour fermer quand agrandie (tout l'écran) */}
+              {isMapEnlarged && (
+                <div 
+                  onClick={() => setIsMapEnlarged(false)}
+                  className="absolute inset-0 bg-transparent cursor-pointer z-50 flex items-center justify-center"
+                />
+              )}
+            </>
+          )}
+
           {/* Les Overlays du HUD */}
-          {playerRef.current && (
+          {playerRef.current && !isMapEnlarged && (
             <GameHUD
               player={playerRef.current}
               mate={mateRef.current || undefined}
@@ -4194,7 +4263,7 @@ export default function App() {
           )}
 
           {/* SENSOR JOYSTICKS TACTILES SENSITIFS MOBILE */}
-          {controlOption === 'touch' && playerRef.current && playerRef.current.alive && !spectatorMode && (
+          {controlOption === 'touch' && playerRef.current && playerRef.current.alive && !spectatorMode && !isMapEnlarged && (
             <div className="absolute inset-0 pointer-events-none select-none z-40">
               
               {/* JOYSTICK GAUCHE : Déplacements libres à 360° */}

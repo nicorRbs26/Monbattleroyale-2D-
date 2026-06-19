@@ -384,7 +384,9 @@ export default function GameHUD({
         {/* Armes en mini-slots */}
         <div className="grid grid-cols-2 gap-2 w-full">
           {/* Slot 1 */}
-          <button
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => onSelectWeapon(0)}
             onTouchStart={(e) => {
               if (e.cancelable) e.preventDefault();
@@ -414,10 +416,12 @@ export default function GameHUD({
             ) : (
               <span className="text-[10px] italic mt-2 text-slate-600">Vide</span>
             )}
-          </button>
+          </div>
 
           {/* Slot 2 */}
-          <button
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => onSelectWeapon(1)}
             onTouchStart={(e) => {
               if (e.cancelable) e.preventDefault();
@@ -447,7 +451,7 @@ export default function GameHUD({
             ) : (
               <span className="text-[10px] italic mt-2 text-slate-600">Vide</span>
             )}
-          </button>
+          </div>
         </div>
 
         {/* Consommables (Soin et Potion) & Emote pour mobile */}
