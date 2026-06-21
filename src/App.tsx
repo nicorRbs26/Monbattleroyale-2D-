@@ -210,6 +210,7 @@ export default function App() {
 
   // Camera tracking
   const cameraRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const screenShakeRef = useRef<number>(0);
 
   // Émettre l'émote du joueur sur le champ de bataille
   const handleTriggerEmote = () => {
@@ -826,6 +827,58 @@ export default function App() {
         life: 1.0,
         decay: 0.04 + Math.random() * 0.04,
         type: 'spark',
+      });
+    }
+  };
+
+  const spawnDebris = (x: number, y: number, hitStructure: Building, count: number, projVx: number = 0, projVy: number = 0) => {
+    let debrisColors: string[] = ['#94a3b8', '#64748b', '#475569']; // Par défaut : débris de pierre gris
+    
+    if (hitStructure.type === 'crate') {
+      debrisColors = [hitStructure.color || '#b45309', '#d97706', '#78350f', '#f59e0b']; // Couleurs de caisse en bois
+    } else if (hitStructure.type === 'structure') {
+      if (hitStructure.subType === 'magma_pillar') {
+        debrisColors = ['#f97316', '#ea580c', '#f43f5e', '#7c2d12']; // Pierres de lave incandescentes
+      } else if (hitStructure.subType === 'sandstone_wall') {
+        debrisColors = ['#eab308', '#ca8a04', '#78350f', '#a16207']; // Pierres sablonneuses
+      } else if (hitStructure.subType === 'sandbag') {
+        debrisColors = ['#d6d3d1', '#a8a29e', '#78716c', '#44403c']; // Tissu sec et poussière de sable
+      } else {
+        debrisColors = [hitStructure.color || '#475569', '#64748b', '#94a3b8', '#cbd5e1']; // Murs généraux
+      }
+    } else if (hitStructure.type === 'tree') {
+      debrisColors = ['#15803d', '#166534', '#78350f', '#854d0e']; // Écorce et feuilles
+    } else if (hitStructure.type === 'bush') {
+      debrisColors = ['#22c55e', '#16a34a', '#15803d']; // Feuilles de buissons
+    }
+
+    const len = Math.sqrt(projVx * projVx + projVy * projVy) || 1;
+    const bulletDirX = projVx / len;
+    const bulletDirY = projVy / len;
+
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const blastPower = 0.5 + Math.random() * 2.5;
+      
+      // Vitesse combinant l'explosion locale et la direction de la balle
+      const vx = Math.cos(angle) * blastPower + bulletDirX * (Math.random() * 1.5);
+      const vy = Math.sin(angle) * blastPower + bulletDirY * (Math.random() * 1.5);
+      
+      const chosenColor = debrisColors[Math.floor(Math.random() * debrisColors.length)];
+      
+      // Persistance de quelques secondes (decay entre 0.003 et 0.008 pour ~3 à 5 secondes de vie à 60 FPS)
+      const decay = 0.003 + Math.random() * 0.005;
+
+      particlesRef.current.push({
+        x,
+        y,
+        vx,
+        vy,
+        color: chosenColor,
+        size: 3 + Math.random() * 5,
+        life: 1.0,
+        decay,
+        type: 'debris',
       });
     }
   };
@@ -1885,6 +1938,42 @@ export default function App() {
         player.deathCause = 'Englouti par la tempête';
         damageCharacter(player, storm.damage / 60, 'environment-tempest');
       }
+
+      // --- LOGIQUE DE RÉANIMATION DU COÉQUIPIER PAR LE JOUEUR ---
+      let nearDownedTeammate: Character | null = null;
+      if (!player.knocked && playMode !== 'solo') {
+        const downedTeammates = characters.filter(c => c.alive && c.knocked && c.teamId === 'team-player' && !c.isPlayer);
+        let minDistance = Infinity;
+        downedTeammates.forEach(tm => {
+          const dist = getDistance(player.x, player.y, tm.x, tm.y);
+          if (dist < 80 && dist < minDistance) {
+            minDistance = dist;
+            nearDownedTeammate = tm;
+          }
+        });
+
+        if (nearDownedTeammate) {
+          const frameMs = 1000 / 60; // Environ 1 frame en ms
+          player.reviveTimer = (player.reviveTimer || 0) + frameMs;
+          nearDownedTeammate.reviveTimer = (nearDownedTeammate.reviveTimer || 0) + frameMs;
+          nearDownedTeammate.revivedBy = player.name;
+
+          if (player.reviveTimer >= 3000) {
+            nearDownedTeammate.knocked = false;
+            nearDownedTeammate.health = 35;
+            nearDownedTeammate.reviveTimer = 0;
+            player.reviveTimer = 0;
+            if (sounds && typeof sounds.playHeal === 'function') {
+              sounds.playHeal();
+            }
+            pushKillFeed(`🩹 Vous avez réanimé ${nearDownedTeammate.name}`);
+          }
+        } else {
+          player.reviveTimer = 0;
+        }
+      } else {
+        player.reviveTimer = 0;
+      }
     }
 
     // --- COÉQUIPIER & BOTS ENNEMIS AI SIMULATION ---
@@ -2250,13 +2339,18 @@ export default function App() {
         ? spatialGridRef.current[gridIdx]
         : [];
 
-      const hitWall = localStructures.some(s => {
+      const hitStructure = localStructures.find(s => {
         return checkPointInRect(proj.x, proj.y, s.x, s.y, s.w, s.h);
       });
 
-      if (hitWall) {
-        if (proj.type === 'rocket') triggerRocketExplosion(proj.x, proj.y, proj.ownerId);
-        else spawnParticlesCircle(proj.x, proj.y, '#94a3b8', 5); // Étincelle grise
+      if (hitStructure) {
+        if (proj.type === 'rocket') {
+          triggerRocketExplosion(proj.x, proj.y, proj.ownerId);
+          spawnDebris(proj.x, proj.y, hitStructure, 15, proj.vx, proj.vy);
+        } else {
+          spawnParticlesCircle(proj.x, proj.y, hitStructure.color || '#94a3b8', 3);
+          spawnDebris(proj.x, proj.y, hitStructure, 6, proj.vx, proj.vy);
+        }
         return false;
       }
 
@@ -2293,6 +2387,10 @@ export default function App() {
 
     // --- PARTICULES DE JEU PHYSIQUE ---
     particlesRef.current = particlesRef.current.filter(part => {
+      if (part.type === 'debris') {
+        part.vx *= 0.92; // Haute friction au sol pour s'arrêter et stagner
+        part.vy *= 0.92;
+      }
       part.x += part.vx;
       part.y += part.vy;
       part.life -= part.decay;
@@ -2300,8 +2398,42 @@ export default function App() {
     });
 
     // --- COHÉRENCE DU NOMBRE DE SURVIVANTS ---
-    // Optimisé : On ne recalcule le compte que si nécessaire via triggerCharacterDeath
-    // ou lors d'init de partie.
+    // Bleed-out (hémorragie progressive) pour toutes les entités K.O.
+    characters.forEach(char => {
+      if (char.alive && char.knocked) {
+        char.health -= 1.5 / 60; // Décrémenter d'environ 1.5 HP par seconde
+        if (char.health <= 0) {
+          char.health = 0;
+          char.alive = false;
+          char.knocked = false;
+          char.deathCause = 'Hémorragie K.O';
+          triggerCharacterDeath(char);
+        }
+      }
+    });
+
+    // --- VÉRIFICATION DES SQUAD WIPES (ÉLÉMINATION DE SQUAD-ENTIÈRE) ---
+    // Dans les modes d'alliance (Duo / Squad), si tous les survivants d'une équipe sont K.O.
+    // ils perdent la boussole et meurent tous immédiatement sans délai.
+    if (playMode !== 'solo') {
+      const allTeams = Array.from(new Set(characters.map(c => c.teamId)));
+      allTeams.forEach(teamId => {
+        const aliveMembers = characters.filter(c => c.teamId === teamId && c.alive);
+        if (aliveMembers.length > 0) {
+          const standingMembers = aliveMembers.filter(c => !c.knocked);
+          if (standingMembers.length === 0) {
+            aliveMembers.forEach(char => {
+              if (char.knocked) {
+                char.alive = false;
+                char.knocked = false;
+                char.deathCause = 'Secteur décimé (Squad Wipe)';
+                triggerCharacterDeath(char, 'Secteur Hostile');
+              }
+            });
+          }
+        }
+      });
+    }
 
     // --- CONDITION DE FIN DE PARTIE ---
     // Trouver combien d'équipes distinctes en vie
@@ -2594,10 +2726,18 @@ export default function App() {
     spawnParticlesCircle(char.x, char.y, char.skinColor, 25);
 
     // Si tu es mort
+    if (char.teamId === 'team-player') {
+      const playerTeamAlive = charactersRef.current.filter(c => c.teamId === 'team-player' && c.alive);
+      if (playerTeamAlive.length === 0) {
+        // Rang final estimé sur le restant d'équipes en vie plus la nôtre qui vient d'être éliminée
+        const remainingTeams = Array.from(new Set(charactersRef.current.filter(c => c.alive).map(c => c.teamId)));
+        const finalRankEst = remainingTeams.length + 1;
+        setEndGameRank(finalRankEst);
+      }
+    }
+
     if (char.isPlayer) {
       sounds.playExplosion();
-      const finalLivingRemaining = charactersRef.current.filter(c => c.alive).length + 1;
-      setEndGameRank(finalLivingRemaining);
       setEndGameKills(char.kills);
       setDeathCause(char.deathCause || 'Mort dans l\'arène');
       
@@ -2629,6 +2769,15 @@ export default function App() {
         decay: 0.03 + Math.random() * 0.03,
         type: 'explosion',
       });
+    }
+
+    // vibe: Leger screen shake si le joueur est proche de l'explosion d'une roquette
+    if (playerRef.current && playerRef.current.alive && !spectatorMode) {
+      const distToPlayer = getDistance(playerRef.current.x, playerRef.current.y, ex, ey);
+      if (distToPlayer < 400) {
+        const proximity = Math.max(0, 1 - distToPlayer / 400); // 1.0 très proche, 0.0 loin
+        screenShakeRef.current = Math.max(screenShakeRef.current, proximity * 15);
+      }
     }
 
     // Appliquer dégâts de zone à proximité (rayon de 150px)
@@ -2686,6 +2835,21 @@ export default function App() {
 
     char.lastShootTime = now;
     activeW.currentClip -= 1;
+
+    // vibe: Activer l'effet de screen shake (recul visuel de caméra) lors des tirs du joueur principal
+    if (char.isPlayer) {
+      if (activeW.type === 'rocket') {
+        screenShakeRef.current = Math.max(screenShakeRef.current, 14);
+      } else if (activeW.type === 'shotgun') {
+        screenShakeRef.current = Math.max(screenShakeRef.current, 9);
+      } else if (activeW.type === 'sniper') {
+        screenShakeRef.current = Math.max(screenShakeRef.current, 7);
+      } else if (activeW.type === 'rifle') {
+        screenShakeRef.current = Math.max(screenShakeRef.current, 2.5);
+      } else if (activeW.type === 'pistol') {
+        screenShakeRef.current = Math.max(screenShakeRef.current, 1.0);
+      }
+    }
 
     // Jouer le bon son
     if (activeW.type === 'shotgun') {
@@ -2842,55 +3006,78 @@ export default function App() {
     nextX = Math.max(char.radius, Math.min(MAP_SIZE - char.radius, nextX));
     nextY = Math.max(char.radius, Math.min(MAP_SIZE - char.radius, nextY));
 
-    // Résolution multi-passes pour glisser parfaitement le long des angles de bâtiments
-    structures.forEach(s => {
-      if (s.type === 'bush') return; // On marche dans les buissons librement !
+    // Vitesses dynamiques ajustées à la volée pour résoudre parfaitement les déviations d'arêtes/angles
+    let currentVx = vx;
+    let currentVy = vy;
 
-      const halfW = s.w / 2;
-      const halfH = s.h / 2;
+    // Résolution multi-passes pour glisser parfaitement le long des angles de bâtiments et coins de structures
+    for (let pass = 0; pass < 3; pass++) {
+      let collidedThisPass = false;
 
-      // Calculer le point le plus proche sur le rectangle de la building
-      const closestX = Math.max(s.x - halfW, Math.min(nextX, s.x + halfW));
-      const closestY = Math.max(s.y - halfH, Math.min(nextY, s.y + halfH));
+      structures.forEach(s => {
+        if (s.type === 'bush') return; // On marche dans les buissons librement !
 
-      const dist = getDistance(nextX, nextY, closestX, closestY);
-      if (dist < char.radius) {
-        // Obtenir le vecteur de recul
-        let diffX = nextX - closestX;
-        let diffY = nextY - closestY;
-        let len = Math.sqrt(diffX * diffX + diffY * diffY);
+        const halfW = s.w / 2;
+        const halfH = s.h / 2;
 
-        if (len === 0) {
-          // Si le joueur est exactement au centre ou sur le point de contact, repousser vers l'extérieur le plus proche
-          const overlapLeft = nextX - (s.x - halfW);
-          const overlapRight = (s.x + halfW) - nextX;
-          const overlapTop = nextY - (s.y - halfH);
-          const overlapBottom = (s.y + halfH) - nextY;
+        // Calculer le point le plus proche sur le rectangle du bâtiment
+        const closestX = Math.max(s.x - halfW, Math.min(nextX, s.x + halfW));
+        const closestY = Math.max(s.y - halfH, Math.min(nextY, s.y + halfH));
 
-          const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
-          if (minOverlap === overlapLeft) { diffX = -1; }
-          else if (minOverlap === overlapRight) { diffX = 1; }
-          else if (minOverlap === overlapTop) { diffY = -1; }
-          else { diffY = 1; }
-          len = 1;
+        const dist = getDistance(nextX, nextY, closestX, closestY);
+        if (dist < char.radius) {
+          collidedThisPass = true;
+
+          // Obtenir le vecteur de recul
+          let diffX = nextX - closestX;
+          let diffY = nextY - closestY;
+          let len = Math.sqrt(diffX * diffX + diffY * diffY);
+
+          if (len === 0) {
+            // Si le joueur est exactement au centre ou sur le point de contact, repousser vers l'extérieur le plus proche
+            const overlapLeft = nextX - (s.x - halfW);
+            const overlapRight = (s.x + halfW) - nextX;
+            const overlapTop = nextY - (s.y - halfH);
+            const overlapBottom = (s.y + halfH) - nextY;
+
+            const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+            if (minOverlap === overlapLeft) { diffX = -1; }
+            else if (minOverlap === overlapRight) { diffX = 1; }
+            else if (minOverlap === overlapTop) { diffY = -1; }
+            else { diffY = 1; }
+            len = 1;
+          }
+
+          const nx = diffX / len; // Normal de collision
+          const ny = diffY / len;
+
+          // Détecter s'il s'agit d'une collision de coin pour adoucir le glissement radial
+          const isCornerX = (closestX === s.x - halfW || closestX === s.x + halfW);
+          const isCornerY = (closestY === s.y - halfH || closestY === s.y + halfH);
+          const isCorner = isCornerX && isCornerY;
+
+          // Repousser le personnage hors de la structure
+          const overlap = char.radius - dist;
+          nextX += nx * overlap;
+          nextY += ny * overlap;
+
+          // Ajustement glissant : On projette la vitesse en cours pour épouser la tangente de la structure ou du coin
+          const dot = currentVx * nx + currentVy * ny;
+          if (dot < 0) {
+            // S'il s'agit d'un point d'angle pur, augmenter légèrement la glisse angulaire
+            const frictionFactor = isCorner ? 0.99 : 0.96;
+            currentVx -= nx * dot * frictionFactor;
+            currentVy -= ny * dot * frictionFactor;
+
+            // Appliquer l'ajustement du glissement sur la position dans la même frame
+            nextX -= nx * dot * frictionFactor;
+            nextY -= ny * dot * frictionFactor;
+          }
         }
+      });
 
-        const nx = diffX / len; // Normal de collision
-        const ny = diffY / len;
-
-        // Repousser le personnage hors de la structure
-        const overlap = char.radius - dist;
-        nextX += nx * overlap;
-        nextY += ny * overlap;
-
-        // Projection du vecteur mouvement (vx, vy) sur l'arête de tangente (glissement polygonal)
-        const dot = vx * nx + vy * ny;
-        if (dot < 0) {
-          nextX -= nx * dot * 0.95; // Permettre un glissement tangentiel presque parfait
-          nextY -= ny * dot * 0.95;
-        }
-      }
-    });
+      if (!collidedThisPass) break;
+    }
 
     char.x = nextX;
     char.y = nextY;
@@ -2923,9 +3110,17 @@ export default function App() {
       ctx.translate(-width / 2, -height / 2);
     }
 
-    // Facteurs de décalage caméra
-    const camX = cameraRef.current.x;
-    const camY = cameraRef.current.y;
+    // Facteurs de décalage caméra avec effet de screen shake (recul visuel)
+    let camX = cameraRef.current.x;
+    let camY = cameraRef.current.y;
+
+    if (screenShakeRef.current > 0.1) {
+      const shakeAmt = screenShakeRef.current;
+      const angle = Math.random() * Math.PI * 2;
+      camX += Math.cos(angle) * shakeAmt;
+      camY += Math.sin(angle) * shakeAmt;
+      screenShakeRef.current *= 0.88; // amortissement/decay progressif
+    }
 
     const toScreenX = (wx: number) => wx - camX + width / 2;
     const toScreenY = (wy: number) => wy - camY + height / 2;
@@ -3897,6 +4092,25 @@ export default function App() {
         const runes = ['0', '1', '[]', '<>', 'AI', 'SYS', 'ERR', '⚡', 'X', '7', 'Ø'];
         const glyph = runes[Math.floor((p.x + p.y) % runes.length)];
         ctx.fillText(glyph, toScreenX(p.x), toScreenY(p.y));
+      } else if (p.type === 'debris') {
+        const px = toScreenX(p.x);
+        const py = toScreenY(p.y);
+        ctx.fillStyle = p.color;
+        ctx.save();
+        ctx.translate(px, py);
+        
+        // Rotation basée sur sa position et un petit offset temporel pour animer la rotation
+        const rotAngle = (p.x * 0.03 + p.y * 0.05);
+        ctx.rotate(rotAngle);
+        
+        ctx.beginPath();
+        ctx.rect(-p.size / 2, -p.size / 3, p.size, p.size * 0.6);
+        ctx.fill();
+        
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
       } else {
         ctx.fillStyle = p.color;
         ctx.beginPath();
@@ -4140,6 +4354,35 @@ export default function App() {
       const badgeIndicator = char.knocked ? ' 🚨 K.O' : '';
       ctx.fillText(char.name + badgeIndicator, cx, cy - 20);
 
+      // --- VISUAL PROGRESS BAR & COUNTDOWN INDICATOR FOR REVIVE ACTION ---
+      if (char.reviveTimer > 0 && char.knocked && char.alive) {
+        ctx.save();
+        const remainingSecs = Math.max(0, (3000 - char.reviveTimer) / 1000);
+        const progressPct = Math.min(1.0, char.reviveTimer / 3000);
+        const revBarW = 40;
+        const revBarH = 5;
+        const revBarY = cy - 44;
+
+        // Background of the progress bar
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+        ctx.fillRect(cx - revBarW / 2, revBarY, revBarW, revBarH);
+
+        // Active fill
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillRect(cx - revBarW / 2, revBarY, revBarW * progressPct, revBarH);
+
+        // Border outline
+        ctx.strokeStyle = '#f8fafc';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(cx - revBarW / 2, revBarY, revBarW, revBarH);
+
+        // Text countdown
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(`🩹 SOIN : ${remainingSecs.toFixed(1)}s`, cx, revBarY - 6);
+        ctx.restore();
+      }
+
       // Rendre l'Émote si active !
       if (char.activeEmote && char.emoteExpiresAt && Date.now() < char.emoteExpiresAt) {
         ctx.save();
@@ -4176,24 +4419,70 @@ export default function App() {
       ctx.globalAlpha = 1.0; // Reset alpha
     });
 
-    // --- RENDRE LES PROJECTILES (TRAIT DE LUMIÈRE) ---
+    // --- RENDRE LES PROJECTILES (TRAIT DE LUMIÈRE AVEC SPRITE BATCHING) ---
     const projectiles = projectilesRef.current;
+    
+    // Groupement des projectiles par apparence visuelle pour minimiser les appels de rendu (Sprite-Batching)
+    const normalBatches = new Map<string, { color: string; radius: number; items: Projectile[] }>();
+    const legendaryBatches = new Map<string, { radius: number; items: Projectile[] }>();
+
     projectiles.forEach(proj => {
       // Optimisation RAM : Frustum Culling dynamique
       if (isOutsideFrustum(proj.x, proj.y, proj.radius + 40)) return;
 
-      // vibe: Effets visuels renforcés pour les projectiles légendaires
       if (proj.isLegendary) {
-        ctx.save();
-        ctx.shadowColor = '#fbbf24';
-        ctx.shadowBlur = 10;
-        ctx.strokeStyle = '#fbbf24';
-        ctx.lineWidth = proj.radius * 1.5;
-        ctx.beginPath();
+        const key = `${proj.radius}`;
+        if (!legendaryBatches.has(key)) {
+          legendaryBatches.set(key, { radius: proj.radius, items: [] });
+        }
+        legendaryBatches.get(key)!.items.push(proj);
+      } else {
+        const key = `${proj.color}_${proj.radius}`;
+        if (!normalBatches.has(key)) {
+          normalBatches.set(key, { color: proj.color, radius: proj.radius, items: [] });
+        }
+        normalBatches.get(key)!.items.push(proj);
+      }
+
+      // Si roquette, spawner de fines volutes de fumée (ne dépend pas des paths du Canvas principal)
+      if (proj.type === 'rocket' && Math.random() > 0.4) {
+        particlesRef.current.push({
+          x: proj.x - proj.vx * 2,
+          y: proj.y - proj.vy * 2,
+          vx: (Math.random() - 0.5) * 1,
+          vy: (Math.random() - 0.5) * 1,
+          color: '#64748b',
+          size: 3 + Math.random() * 4,
+          life: 0.8,
+          decay: 0.04,
+          type: 'smoke',
+        });
+      }
+    });
+
+    // Tracer tous les projectiles normaux par groupe (1 seul stroke par esthétique d'arme)
+    normalBatches.forEach(batch => {
+      ctx.strokeStyle = batch.color;
+      ctx.lineWidth = batch.radius;
+      ctx.beginPath();
+      batch.items.forEach(proj => {
+        ctx.moveTo(toScreenX(proj.x - proj.vx * 1.5), toScreenY(proj.y - proj.vy * 1.5));
+        ctx.lineTo(toScreenX(proj.x), toScreenY(proj.y));
+      });
+      ctx.stroke();
+    });
+
+    // Tracer tous les projectiles légendaires par groupe avec ombres dorées
+    legendaryBatches.forEach(batch => {
+      ctx.save();
+      ctx.shadowColor = '#fbbf24';
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = batch.radius * 1.5;
+      ctx.beginPath();
+      batch.items.forEach(proj => {
         ctx.moveTo(toScreenX(proj.x - proj.vx * 2), toScreenY(proj.y - proj.vy * 2));
         ctx.lineTo(toScreenX(proj.x), toScreenY(proj.y));
-        ctx.stroke();
-        ctx.restore();
 
         // Particules d'étincelles dorées
         if (Math.random() > 0.6) {
@@ -4209,29 +4498,9 @@ export default function App() {
             type: 'spark',
           });
         }
-      } else {
-        ctx.strokeStyle = proj.color;
-        ctx.lineWidth = proj.radius;
-        ctx.beginPath();
-        ctx.moveTo(toScreenX(proj.x - proj.vx * 1.5), toScreenY(proj.y - proj.vy * 1.5));
-        ctx.lineTo(toScreenX(proj.x), toScreenY(proj.y));
-        ctx.stroke();
-      }
-
-      // Si roquette, spawner de fines volutes de fumée
-      if (proj.type === 'rocket' && Math.random() > 0.4) {
-        particlesRef.current.push({
-          x: proj.x - proj.vx * 2,
-          y: proj.y - proj.vy * 2,
-          vx: (Math.random() - 0.5) * 1,
-          vy: (Math.random() - 0.5) * 1,
-          color: '#64748b',
-          size: 3 + Math.random() * 4,
-          life: 0.8,
-          decay: 0.04,
-          type: 'smoke',
-        });
-      }
+      });
+      ctx.stroke();
+      ctx.restore();
     });
 
     // --- RENDRE LE FILTRE MULTICOLORE DE POST-TRAITEMENT METEO IA ---

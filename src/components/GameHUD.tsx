@@ -137,10 +137,20 @@ export default function GameHUD({
         )}
         
         {player.reviveTimer > 0 && !player.knocked && (
-          <div className="bg-amber-500/90 border border-amber-400 text-slate-950 font-sans text-sm font-extrabold px-6 py-2 rounded-full shadow-xl animate-pulse text-center flex items-center gap-2">
-            <span>➕ Réanimation en cours :</span>
-            <div className="w-20 bg-slate-950 rounded-full h-2.5 overflow-hidden">
-              <div className="bg-amber-400 h-full transition-all" style={{ width: `${(player.reviveTimer / 3000) * 100}%` }}></div>
+          <div className="flex flex-col items-center gap-1 bg-slate-950/90 border border-amber-500/80 p-3 rounded-2xl shadow-[0_0_20px_rgba(245,158,11,0.35)] backdrop-blur-md animate-fade-in pointer-events-none">
+            <div className="text-amber-400 font-sans text-xs font-black tracking-wider uppercase flex items-center gap-1.5">
+              <span className="animate-spin text-sm">➕</span> RÉANIMATION EN COURS
+            </div>
+            <div className="flex items-center gap-3 mt-1">
+              <div className="w-40 bg-slate-800 rounded-full h-3 overflow-hidden border border-slate-700">
+                <div 
+                  className="bg-amber-500 h-full rounded-full shadow-[0_0_10px_rgba(245,158,11,0.6)] transition-all ease-out" 
+                  style={{ width: `${Math.min(100, (player.reviveTimer / 3000) * 100)}%` }}
+                ></div>
+              </div>
+              <span className="text-amber-300 font-mono text-sm font-extrabold min-w-[32px] text-right">
+                {Math.max(0, (3000 - player.reviveTimer) / 1000).toFixed(1)}s
+              </span>
             </div>
           </div>
         )}

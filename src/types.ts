@@ -177,7 +177,7 @@ export interface GameParticle {
   size: number;
   life: number; // 0 à 1
   decay: number;
-  type: 'spark' | 'smoke' | 'blood' | 'exhaust' | 'shield_spark' | 'explosion' | 'hazard_indicator' | 'digital_rune' | 'acid_splash' | 'fire';
+  type: 'spark' | 'smoke' | 'blood' | 'exhaust' | 'shield_spark' | 'explosion' | 'hazard_indicator' | 'digital_rune' | 'acid_splash' | 'fire' | 'debris';
 }
 
 export interface StormZone {
